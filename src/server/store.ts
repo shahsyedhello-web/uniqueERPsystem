@@ -45,6 +45,7 @@ import {
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'pos_database.json');
+const TMP_DB_FILE = path.join('/tmp', 'pos_database.json');
 
 export interface DBData {
   users: User[];
@@ -242,15 +243,23 @@ function ensureDataDirExists() {
 export function loadDB(forceReload = false): DBData {
   ensureDataDirExists();
 
-  let currentMtime = 0;
+  let activeFile = DB_FILE;
   let fileExists = false;
+
   try {
-    fileExists = fs.existsSync(DB_FILE);
+    if (fs.existsSync(TMP_DB_FILE)) {
+      activeFile = TMP_DB_FILE;
+      fileExists = true;
+    } else if (fs.existsSync(DB_FILE)) {
+      activeFile = DB_FILE;
+      fileExists = true;
+    }
   } catch (e) {}
 
+  let currentMtime = 0;
   if (fileExists) {
     try {
-      currentMtime = fs.statSync(DB_FILE).mtimeMs;
+      currentMtime = fs.statSync(activeFile).mtimeMs;
     } catch (e) {}
   }
 
@@ -262,7 +271,7 @@ export function loadDB(forceReload = false): DBData {
 
   if (fileExists) {
     try {
-      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      const raw = fs.readFileSync(activeFile, 'utf-8');
       dbInMemory = JSON.parse(raw);
       // Ensure empty arrays for strictly requested empty initialization if missing
       dbInMemory!.warehouses = dbInMemory!.warehouses || [
@@ -555,24 +564,25 @@ export function seedBakeryDataIfEmpty(db: DBData) {
 export function saveDB() {
   if (!dbInMemory) return;
   try {
-    ensureDataDirExists();
     const serialized = JSON.stringify(dbInMemory, null, 2);
 
-    if (fs.existsSync(DB_FILE)) {
+    // Try saving to project root data directory
+    try {
+      ensureDataDirExists();
+      fs.writeFileSync(DB_FILE, serialized, 'utf-8');
       try {
-        const existing = fs.readFileSync(DB_FILE, 'utf-8');
-        if (existing === serialized) {
-          return; // Content is identical; do not rewrite or trigger file modification
-        }
-      } catch (e) {
-        // Ignore read error and proceed
-      }
+        lastDbMtime = fs.statSync(DB_FILE).mtimeMs;
+      } catch (e) {}
+    } catch (err) {
+      // Read-only filesystem in serverless deployment
     }
 
-    fs.writeFileSync(DB_FILE, serialized, 'utf-8');
+    // Always attempt saving to /tmp for serverless persistence fallback
     try {
-      lastDbMtime = fs.statSync(DB_FILE).mtimeMs;
-    } catch (e) {}
+      fs.writeFileSync(TMP_DB_FILE, serialized, 'utf-8');
+    } catch (err) {
+      // Ignored
+    }
   } catch (err) {
     // Read-only filesystem in serverless deployment
   }

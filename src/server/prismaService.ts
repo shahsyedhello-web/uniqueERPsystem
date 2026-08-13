@@ -99,29 +99,29 @@ export const prisma = new Proxy(
 ) as any;
 
 export async function getUserCount(): Promise<number> {
+  let prismaCount = 0;
   try {
     await ensurePrismaInitialized();
     if (prismaInstance && isPrismaConnected) {
       try {
-        const count = await prismaInstance.user.count({
+        prismaCount = await prismaInstance.user.count({
           where: { deletedAt: null },
         });
-        return count;
       } catch (e: any) {
         isPrismaConnected = false;
         console.warn('[Prisma] PostgreSQL user count query failed:', e?.message || e);
       }
     }
-    const db = loadDB();
-    return (db.users || []).length;
   } catch (err: any) {
-    console.error('[PrismaService] Error in getUserCount:', err?.message || err);
-    try {
-      const db = loadDB();
-      return (db.users || []).length;
-    } catch {
-      return 0;
-    }
+    console.warn('[PrismaService] Error checking Prisma user count:', err?.message || err);
+  }
+
+  try {
+    const db = loadDB();
+    const jsonCount = (db.users || []).length;
+    return Math.max(prismaCount, jsonCount);
+  } catch {
+    return prismaCount;
   }
 }
 

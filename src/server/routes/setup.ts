@@ -83,7 +83,9 @@ router.post('/initialize', async (req: Request, res: Response) => {
     const token = jwt.sign(
       {
         id: superAdmin.id,
+        userId: superAdmin.id,
         name: superAdmin.name,
+        username: superAdmin.username || superAdmin.email,
         email: superAdmin.email,
         role: superAdmin.role,
       },

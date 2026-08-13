@@ -72,7 +72,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({ onSetupComplet
 
       if (data.token && data.user) {
         setDirectAuth(data.token, data.user);
-        await checkSetupStatus();
         if (onSetupComplete) onSetupComplete();
       } else {
         await checkSetupStatus();

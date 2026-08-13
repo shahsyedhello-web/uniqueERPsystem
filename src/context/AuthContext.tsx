@@ -75,7 +75,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const data = await apiFetch('/setup/status');
       const required = Boolean(data.isSetupRequired);
-      setIsSetupRequired(required);
+      const activeToken = localStorage.getItem('pos_token');
+      if (!activeToken) {
+        setIsSetupRequired(required);
+      } else {
+        setIsSetupRequired(false);
+      }
       return required;
     } catch (e) {
       console.error('Failed to fetch setup status:', e);
@@ -86,21 +91,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const initAuth = async () => {
       setLoading(true);
-      const setupNeeded = await checkSetupStatus();
+      const activeToken = localStorage.getItem('pos_token') || token;
 
-      if (token && !setupNeeded) {
+      if (activeToken) {
         try {
           const data = await apiFetch('/auth/me');
-          setUser(data.user);
+          if (data && data.user) {
+            setUser(data.user);
+            setToken(activeToken);
+            setIsSetupRequired(false);
+          } else {
+            throw new Error('User data missing');
+          }
         } catch {
           localStorage.removeItem('pos_token');
           setToken(null);
           setUser(null);
+          await checkSetupStatus();
         }
-      } else if (setupNeeded) {
-        localStorage.removeItem('pos_token');
-        setToken(null);
-        setUser(null);
+      } else {
+        await checkSetupStatus();
       }
       
       await refreshBranches();
