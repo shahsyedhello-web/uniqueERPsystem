@@ -12,12 +12,21 @@ router.get('/', async (req, res) => {
   try {
     await ensurePrismaInitialized();
     const prisma = getPrisma();
+    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+
     if (prisma && isDbConnected()) {
       const categories = await prisma.category.findMany({
         where: { deletedAt: null },
         orderBy: { createdAt: 'desc' },
       });
       return res.json(categories);
+    }
+
+    if (isProd && process.env.DATABASE_URL) {
+      return res.status(503).json({
+        error: 'DATABASE_UNAVAILABLE',
+        message: 'PostgreSQL database connection is unavailable in production.',
+      });
     }
 
     const db = loadDB();
@@ -29,13 +38,7 @@ router.get('/', async (req, res) => {
     return res.json(categories);
   } catch (err: any) {
     console.error('[Categories GET Error]:', err);
-    try {
-      const db = loadDB();
-      db.categories = db.categories || [];
-      return res.json(db.categories.filter((c: any) => !c.deletedAt));
-    } catch {
-      return res.status(500).json({ error: 'Failed to fetch categories.' });
-    }
+    return res.status(500).json({ error: 'Failed to fetch categories.' });
   }
 });
 
@@ -240,7 +243,10 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
     if (prisma && isDbConnected()) {
       const category = await prisma.category.findUnique({ where: { id } });
       if (!category) {
-        return res.status(404).json({ error: 'Category not found.' });
+        return res.status(404).json({
+          error: 'CATEGORY_NOT_FOUND',
+          message: 'Category no longer exists. Refresh the page and try again.',
+        });
       }
 
       const assignedProductsCount = await prisma.product.count({

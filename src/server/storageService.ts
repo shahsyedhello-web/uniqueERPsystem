@@ -8,35 +8,34 @@ export async function uploadProductImage(
   mimeType: string = 'image/png'
 ): Promise<string> {
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
 
-  // 1. Primary Production Storage: Vercel Blob Object Storage
   if (blobToken) {
     try {
       const buffer = typeof fileBuffer === 'string'
         ? Buffer.from(fileBuffer.replace(/^data:image\/\w+;base64,/, ''), 'base64')
         : fileBuffer;
 
-      const blob = await put(`products/${Date.now()}-${filename}`, buffer, {
+      const blob = await put(`products/${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`, buffer, {
         access: 'public',
         contentType: mimeType || 'image/png',
         token: blobToken,
       });
       console.log('[Storage] Uploaded image to Vercel Blob:', blob.url);
       return blob.url;
-    } catch (err) {
-      console.warn('[Storage] Vercel Blob upload failed, falling back to data URL or file storage:', err);
+    } catch (err: any) {
+      console.error('[Storage] Vercel Blob upload failed:', err);
+      if (isProd) {
+        throw new Error('IMAGE_UPLOAD_FAILED: Failed to upload image to Vercel Blob storage.');
+      }
     }
   }
 
-  // 2. Data URL fallback (if client uploaded base64 data string and no object store)
-  if (typeof fileBuffer === 'string' && fileBuffer.startsWith('data:image/')) {
-    // If it's a small data URL or no local persistence, keep data URL or write to uploads
-    if (fileBuffer.length < 500000) {
-      return fileBuffer;
-    }
+  if (isProd) {
+    throw new Error('IMAGE_STORAGE_NOT_CONFIGURED: Product image storage is not configured. Please configure Vercel Blob.');
   }
 
-  // 3. Development / Container Filesystem fallback
+  // Development fallback to local filesystem
   const uploadsDir = path.join(process.cwd(), 'uploads', 'products');
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
