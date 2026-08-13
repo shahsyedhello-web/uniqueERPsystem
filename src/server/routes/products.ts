@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
+import { put } from '@vercel/blob';
 import { loadDB, saveDB, generateUUID, logActivity } from '../store';
+import { getPrisma } from '../prismaService';
 import { Product } from '../../types/pos';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 
@@ -9,8 +11,8 @@ const router = Router();
 
 router.use(authenticate);
 
-// Product Image Upload Route
-router.post('/upload-image', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthRequest, res) => {
+// Product Image Upload Route with Vercel Blob + Local Disk + Data URL Fallbacks
+router.post('/upload-image', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: AuthRequest, res) => {
   try {
     const { imageBase64, filename } = req.body;
     if (!imageBase64 || typeof imageBase64 !== 'string') {
@@ -22,7 +24,8 @@ router.post('/upload-image', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (re
       return res.status(400).json({ error: 'Invalid base64 image format. Supported formats: PNG, JPG, JPEG, WEBP.' });
     }
 
-    const ext = matches[1].toLowerCase() === 'jpeg' ? 'jpg' : matches[1].toLowerCase();
+    const rawExt = matches[1].toLowerCase();
+    const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
     const allowedExts = ['png', 'jpg', 'jpeg', 'webp'];
     if (!allowedExts.includes(ext)) {
       return res.status(400).json({ error: `Unsupported image format (${ext}). Allowed: PNG, JPG, JPEG, WEBP.` });
@@ -33,37 +36,63 @@ router.post('/upload-image', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (re
       return res.status(400).json({ error: 'Image size exceeds maximum limit of 5MB.' });
     }
 
-    const uploadDir = path.join(process.cwd(), 'uploads', 'products');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    const safeFilename = `prod_${Date.now()}_${generateUUID().slice(0, 8)}.${ext}`;
+
+    // 1. Try Vercel Blob if token is available
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      try {
+        const blob = await put(`products/${safeFilename}`, buffer, {
+          access: 'public',
+          contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
+        return res.json({ success: true, imageUrl: blob.url, message: 'Image uploaded successfully to Vercel Blob.' });
+      } catch (blobErr: any) {
+        console.warn('[Upload] Vercel Blob upload warning:', blobErr?.message || blobErr);
+      }
     }
 
-    const safeFilename = `prod_${Date.now()}_${generateUUID().slice(0, 8)}.${ext}`;
-    const filePath = path.join(uploadDir, safeFilename);
+    // 2. Try writing to local disk if running locally outside Vercel
+    if (process.env.VERCEL !== '1') {
+      try {
+        const uploadDir = path.join(process.cwd(), 'uploads', 'products');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        const filePath = path.join(uploadDir, safeFilename);
+        fs.writeFileSync(filePath, buffer);
+        const imageUrl = `/uploads/products/${safeFilename}`;
+        return res.json({ success: true, imageUrl, message: 'Image uploaded successfully.' });
+      } catch (fsErr: any) {
+        console.warn('[Upload] Local filesystem write warning:', fsErr?.message || fsErr);
+      }
+    }
 
-    fs.writeFileSync(filePath, buffer);
-
-    const imageUrl = `/uploads/products/${safeFilename}`;
-    return res.json({ success: true, imageUrl, message: 'Image uploaded successfully.' });
+    // 3. Fallback to Data URL so upload never throws ENOENT on Vercel
+    return res.json({
+      success: true,
+      imageUrl: imageBase64,
+      message: 'Image stored as persistent base64 Data URL.',
+    });
   } catch (err: any) {
     console.error('Product image upload error:', err);
     return res.status(500).json({ error: err?.message || 'Failed to upload product image.' });
   }
 });
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const db = loadDB();
   const productsWithCat = db.products.map((p) => {
     const cat = db.categories.find((c) => c.id === p.categoryId);
     return {
       ...p,
-      categoryName: cat ? cat.name : 'Uncategorized',
+      categoryName: cat ? cat.name : p.categoryName || 'Uncategorized',
     };
   });
   res.json(productsWithCat);
 });
 
-router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthRequest, res) => {
+router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: AuthRequest, res) => {
   const {
     name,
     sku,
@@ -86,34 +115,21 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthReque
     variants,
   } = req.body;
 
-  if (!name || !categoryId || salePrice === undefined) {
+  if (!name || !name.trim() || !categoryId || salePrice === undefined) {
     return res.status(400).json({ error: 'Name, Category, and Sale Price are required.' });
   }
 
+  const cleanCategoryId = String(categoryId).trim();
   const db = loadDB();
 
-  let category = db.categories.find(
-    (c) =>
-      c.id === categoryId ||
-      c.id.toLowerCase() === String(categoryId).trim().toLowerCase() ||
-      c.name.toLowerCase() === String(categoryId).trim().toLowerCase() ||
-      (c.code && c.code.toLowerCase() === String(categoryId).trim().toLowerCase())
-  );
+  // Strict Category Validation: Look up category strictly by exact database ID
+  const category = db.categories.find((c) => c.id === cleanCategoryId);
 
   if (!category) {
-    const catName = String(categoryId).trim() || 'General';
-    category = {
-      id: generateUUID(),
-      name: catName,
-      code: 'CAT-' + (db.categories.length + 1).toString().padStart(3, '0'),
-      description: 'Auto-created category',
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-    };
-    db.categories.push(category);
+    return res.status(400).json({
+      error: 'Selected category does not exist. Please select a valid category from the dropdown.',
+    });
   }
-
-  const resolvedCategoryId = category.id;
 
   function createEan13(): string {
     const base12 = '200' + Math.floor(100000000 + Math.random() * 900000000).toString();
@@ -127,8 +143,8 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthReque
     return `${base12}${checkDigit}`;
   }
 
-  const generatedSku = sku || 'USB-' + Math.floor(100000 + Math.random() * 900000);
-  const generatedBarcode = barcode || createEan13();
+  const generatedSku = (sku && sku.trim()) || 'USB-' + Math.floor(100000 + Math.random() * 900000);
+  const generatedBarcode = (barcode && barcode.trim()) || createEan13();
 
   // Check unique SKU or Barcode
   if (db.products.some((p) => p.sku.toLowerCase() === generatedSku.toLowerCase())) {
@@ -141,10 +157,10 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthReque
 
   const newProduct: Product = {
     id: generateUUID(),
-    name,
+    name: name.trim(),
     sku: generatedSku,
     barcode: generatedBarcode,
-    categoryId: resolvedCategoryId,
+    categoryId: category.id,
     unit: unit || 'pcs',
     purchasePrice: Number(purchasePrice) || 0,
     salePrice: Number(salePrice) || 0,
@@ -179,18 +195,18 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthReque
       newStock: newProduct.currentStock,
       referenceNo: 'INIT-' + Date.now(),
       reason: 'Initial stock setup',
-      createdByName: 'Admin',
+      createdByName: req.user?.name || 'Admin',
       createdAt: new Date().toISOString(),
     });
   }
 
   saveDB();
-  logActivity('system', 'User', 'Create Product', 'Products', `Created product ${name} (${generatedSku})`);
+  logActivity('system', req.user?.name || 'User', 'Create Product', 'Products', `Created product ${name} (${generatedSku})`);
 
   res.status(201).json(newProduct);
 });
 
-router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthRequest, res) => {
+router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: AuthRequest, res) => {
   const { id } = req.params;
   const db = loadDB();
   const index = db.products.findIndex((p) => p.id === id);
@@ -218,33 +234,21 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthReq
       return res.status(400).json({ error: `Barcode "${req.body.barcode}" already exists on another product.` });
     }
   }
-  const targetCatId = req.body.categoryId || existing.categoryId;
-  let targetCategory = db.categories.find(
-    (c) =>
-      c.id === targetCatId ||
-      c.id.toLowerCase() === String(targetCatId).trim().toLowerCase() ||
-      c.name.toLowerCase() === String(targetCatId).trim().toLowerCase() ||
-      (c.code && c.code.toLowerCase() === String(targetCatId).trim().toLowerCase())
-  );
 
-  if (!targetCategory && targetCatId) {
-    const catName = String(targetCatId).trim();
-    targetCategory = {
-      id: generateUUID(),
-      name: catName,
-      code: 'CAT-' + (db.categories.length + 1).toString().padStart(3, '0'),
-      description: 'Auto-created category',
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-    };
-    db.categories.push(targetCategory);
+  const targetCatId = req.body.categoryId ? String(req.body.categoryId).trim() : existing.categoryId;
+  const targetCategory = db.categories.find((c) => c.id === targetCatId);
+
+  if (!targetCategory) {
+    return res.status(400).json({
+      error: 'Selected category does not exist. Please select a valid category from the dropdown.',
+    });
   }
 
   const updated: Product = {
     ...existing,
     ...req.body,
-    categoryId: targetCategory ? targetCategory.id : targetCatId,
-    categoryName: targetCategory ? targetCategory.name : existing.categoryName || 'Uncategorized',
+    categoryId: targetCategory.id,
+    categoryName: targetCategory.name,
     purchasePrice: Number(req.body.purchasePrice ?? existing.purchasePrice),
     salePrice: Number(req.body.salePrice ?? existing.salePrice),
     costPrice: Number(req.body.costPrice ?? existing.costPrice),
