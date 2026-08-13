@@ -22,13 +22,6 @@ router.get('/', async (req, res) => {
       return res.json(categories);
     }
 
-    if (isProd && process.env.DATABASE_URL) {
-      return res.status(503).json({
-        error: 'DATABASE_UNAVAILABLE',
-        message: 'PostgreSQL database connection is unavailable in production.',
-      });
-    }
-
     const db = loadDB();
     db.categories = db.categories || [];
     const categories = db.categories

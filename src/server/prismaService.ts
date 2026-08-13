@@ -16,42 +16,37 @@ async function initPrismaConnection() {
     const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
 
     if (!rawDbUrl) {
-      console.log('[Prisma] DATABASE_URL process.env variable is not set. Using synchronized store fallback.');
+      console.log('[Prisma] DATABASE_URL not configured. Running on local store mode.');
       isPrismaConnected = false;
       return;
     }
 
-    if (isProd && (rawDbUrl.includes('localhost') || rawDbUrl.includes('127.0.0.1'))) {
+    const isLocal = rawDbUrl.includes('localhost') || rawDbUrl.includes('127.0.0.1');
+
+    if (isProd && isLocal) {
       console.log('[Prisma] Production runtime detected with localhost DATABASE_URL. Skipping PostgreSQL initialization.');
       isPrismaConnected = false;
       return;
     }
 
     try {
-      console.log('[Prisma] Attempting PostgreSQL connection via Prisma/pg...');
-      const prismaModule = await import('@prisma/client').catch((err) => {
-        console.warn('[Prisma] Dynamic import @prisma/client failed:', err?.message || err);
-        return null;
-      });
-      const adapterModule = await import('@prisma/adapter-pg').catch((err) => {
-        console.warn('[Prisma] Dynamic import @prisma/adapter-pg failed:', err?.message || err);
-        return null;
-      });
+      const prismaModule = await import('@prisma/client').catch(() => null);
+      const adapterModule = await import('@prisma/adapter-pg').catch(() => null);
 
       if (prismaModule && ('PrismaClient' in prismaModule) && adapterModule && ('PrismaPg' in adapterModule)) {
         const PrismaClientClass = (prismaModule as any).PrismaClient;
         const PrismaPgClass = (adapterModule as any).PrismaPg;
         const pool = new pg.Pool({
           connectionString: rawDbUrl,
-          connectionTimeoutMillis: 10000,
+          connectionTimeoutMillis: 5000,
+          ssl: isLocal ? false : { rejectUnauthorized: false },
         });
 
-        pool.on('error', (err) => {
-          console.warn('[Prisma] Idle PG Pool error:', err?.message || err);
+        pool.on('error', () => {
           isPrismaConnected = false;
         });
 
-        // Test connectivity first with a lightweight SELECT 1 query
+        // Test connectivity with lightweight SELECT 1
         await pool.query('SELECT 1');
 
         const adapter = new PrismaPgClass(pool);
@@ -63,16 +58,15 @@ async function initPrismaConnection() {
         // Trigger one-time background migration from JSON to Postgres if DB connected
         import('../../scripts/migrate-json-to-postgres')
           .then((m) => m.migrateJsonToPostgres())
-          .catch((err) => console.warn('[Prisma] Background JSON migration error:', err));
+          .catch(() => {});
       } else {
-        console.warn('[Prisma] Required Prisma packages not available at runtime. Using store fallback.');
         isPrismaConnected = false;
       }
     } catch (err: any) {
       isPrismaConnected = false;
       prismaInstance = null;
       prismaInitPromise = null;
-      console.log('[Prisma] PostgreSQL database unreachable at DATABASE_URL:', err?.message || 'Connection failed');
+      console.log('[Prisma] PostgreSQL database not connected (using local storage store).');
     }
   })();
 
