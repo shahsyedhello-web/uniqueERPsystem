@@ -71,6 +71,46 @@ app.get('/api/health/db', async (req, res) => {
   }
 });
 
+// Production Vercel Database Diagnostics endpoint (Phase 8)
+app.get('/api/database/status', async (req, res) => {
+  const rawDbUrl = (process.env.DATABASE_URL || '').trim();
+  const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+  let dbHost = 'unknown';
+  try {
+    const parsedUrl = new URL(rawDbUrl);
+    dbHost = parsedUrl.hostname;
+  } catch {
+    const match = rawDbUrl.match(/@([^/:?]+)/);
+    if (match) dbHost = match[1];
+  }
+  const isLocal = rawDbUrl.includes('localhost') || rawDbUrl.includes('127.0.0.1') || rawDbUrl.includes('[::1]');
+
+  let dbConnection = 'disconnected';
+  let connected = false;
+  try {
+    const { ensurePrismaInitialized, getPrisma, isDbConnected } = await import('./prismaService');
+    await ensurePrismaInitialized();
+    const p = getPrisma();
+    connected = isDbConnected();
+    if (p && connected) {
+      await p.$queryRaw`SELECT 1`;
+      dbConnection = 'ok';
+    }
+  } catch (err: any) {
+    dbConnection = `error: ${err?.message || 'failed'}`;
+  }
+
+  res.json({
+    environment: isProd ? 'production' : 'development',
+    databaseUrlPresent: Boolean(rawDbUrl),
+    databaseHost: dbHost,
+    databaseIsLocalhost: isLocal,
+    databaseProvider: 'postgresql',
+    databaseConnection: dbConnection,
+    prismaConnected: connected,
+  });
+});
+
 // API Routes
 app.use('/api/setup', setupRoutes);
 app.use('/api/auth', authRoutes);
