@@ -43,7 +43,7 @@ async function initPrismaConnection() {
         const PrismaPgClass = (adapterModule as any).PrismaPg;
         const pool = new pg.Pool({
           connectionString: rawDbUrl,
-          connectionTimeoutMillis: 1500,
+          connectionTimeoutMillis: 10000,
         });
 
         pool.on('error', (err) => {
@@ -71,7 +71,8 @@ async function initPrismaConnection() {
     } catch (err: any) {
       isPrismaConnected = false;
       prismaInstance = null;
-      console.log('[Prisma] PostgreSQL database unreachable at DATABASE_URL:', err?.message || 'Connection failed', '. Using synchronized JSON store fallback.');
+      prismaInitPromise = null;
+      console.log('[Prisma] PostgreSQL database unreachable at DATABASE_URL:', err?.message || 'Connection failed');
     }
   })();
 

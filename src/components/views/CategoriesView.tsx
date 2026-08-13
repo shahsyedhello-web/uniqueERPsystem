@@ -15,6 +15,7 @@ export const CategoriesView: React.FC = () => {
   const [deletingError, setDeletingError] = useState<string | null>(null);
   const [deleteSuccessMessage, setDeleteSuccessMessage] = useState<string | null>(null);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -26,15 +27,15 @@ export const CategoriesView: React.FC = () => {
   }, []);
 
   const loadCategories = async () => {
+    setLoadError(null);
     try {
-      const [catData, prodData] = await Promise.all([
-        apiFetch<Category[]>('/categories').catch(() => []),
-        apiFetch<Product[]>('/products').catch(() => []),
-      ]);
+      const catData = await apiFetch<Category[]>('/categories');
+      const prodData = await apiFetch<Product[]>('/products').catch(() => []);
       setCategories(Array.isArray(catData) ? catData : []);
       setProducts(Array.isArray(prodData) ? prodData : []);
-    } catch (e) {
-      console.error(e);
+    } catch (err: any) {
+      console.error(err);
+      setLoadError(err.message || 'Failed to load categories from PostgreSQL database.');
       setCategories([]);
       setProducts([]);
     }
@@ -121,6 +122,18 @@ export const CategoriesView: React.FC = () => {
           <span>Add Category</span>
         </button>
       </div>
+
+      {loadError && (
+        <div className="flex items-center justify-between text-xs text-red-400 bg-red-950/60 border border-red-800/80 p-3.5 rounded-xl font-bold shadow-sm">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button onClick={loadCategories} className="px-3 py-1 bg-red-900/50 hover:bg-red-900 text-red-200 rounded-lg text-[11px]">
+            Retry
+          </button>
+        </div>
+      )}
 
       {deleteSuccessMessage && (
         <div className="flex items-center space-x-2 text-xs text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 p-3 rounded-xl font-bold shadow-sm animate-fade-in">
