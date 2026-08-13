@@ -92,10 +92,28 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthReque
 
   const db = loadDB();
 
-  const category = db.categories.find((c) => c.id === categoryId);
+  let category = db.categories.find(
+    (c) =>
+      c.id === categoryId ||
+      c.id.toLowerCase() === String(categoryId).trim().toLowerCase() ||
+      c.name.toLowerCase() === String(categoryId).trim().toLowerCase() ||
+      (c.code && c.code.toLowerCase() === String(categoryId).trim().toLowerCase())
+  );
+
   if (!category) {
-    return res.status(400).json({ error: 'Selected category does not exist.' });
+    const catName = String(categoryId).trim() || 'General';
+    category = {
+      id: generateUUID(),
+      name: catName,
+      code: 'CAT-' + (db.categories.length + 1).toString().padStart(3, '0'),
+      description: 'Auto-created category',
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString(),
+    };
+    db.categories.push(category);
   }
+
+  const resolvedCategoryId = category.id;
 
   function createEan13(): string {
     const base12 = '200' + Math.floor(100000000 + Math.random() * 900000000).toString();
@@ -126,7 +144,7 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthReque
     name,
     sku: generatedSku,
     barcode: generatedBarcode,
-    categoryId,
+    categoryId: resolvedCategoryId,
     unit: unit || 'pcs',
     purchasePrice: Number(purchasePrice) || 0,
     salePrice: Number(salePrice) || 0,
@@ -201,12 +219,31 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthReq
     }
   }
   const targetCatId = req.body.categoryId || existing.categoryId;
-  const targetCategory = db.categories.find((c) => c.id === targetCatId);
+  let targetCategory = db.categories.find(
+    (c) =>
+      c.id === targetCatId ||
+      c.id.toLowerCase() === String(targetCatId).trim().toLowerCase() ||
+      c.name.toLowerCase() === String(targetCatId).trim().toLowerCase() ||
+      (c.code && c.code.toLowerCase() === String(targetCatId).trim().toLowerCase())
+  );
+
+  if (!targetCategory && targetCatId) {
+    const catName = String(targetCatId).trim();
+    targetCategory = {
+      id: generateUUID(),
+      name: catName,
+      code: 'CAT-' + (db.categories.length + 1).toString().padStart(3, '0'),
+      description: 'Auto-created category',
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString(),
+    };
+    db.categories.push(targetCategory);
+  }
 
   const updated: Product = {
     ...existing,
     ...req.body,
-    categoryId: targetCatId,
+    categoryId: targetCategory ? targetCategory.id : targetCatId,
     categoryName: targetCategory ? targetCategory.name : existing.categoryName || 'Uncategorized',
     purchasePrice: Number(req.body.purchasePrice ?? existing.purchasePrice),
     salePrice: Number(req.body.salePrice ?? existing.salePrice),
