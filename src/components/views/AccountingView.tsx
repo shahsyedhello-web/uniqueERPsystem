@@ -113,15 +113,42 @@ export const AccountingView: React.FC = () => {
         fetch('/api/suppliers'),
       ]);
 
-      if (regRes.ok) setRegisters(await regRes.json());
-      if (shiftRes.ok) setShifts(await shiftRes.json());
-      if (actShiftRes.ok) setActiveShift(await actShiftRes.json());
-      if (accRes.ok) setAccounts(await accRes.json());
-      if (coaRes.ok) setChartAccounts(await coaRes.json());
-      if (jeRes.ok) setJournals(await jeRes.json());
-      if (trfRes.ok) setTransfers(await trfRes.json());
-      if (custRes.ok) setCustomers(await custRes.json());
-      if (suppRes.ok) setSuppliers(await suppRes.json());
+      if (regRes.ok) {
+        const d = await regRes.json();
+        setRegisters(Array.isArray(d) ? d : []);
+      }
+      if (shiftRes.ok) {
+        const d = await shiftRes.json();
+        setShifts(Array.isArray(d) ? d : []);
+      }
+      if (actShiftRes.ok) {
+        const d = await actShiftRes.json();
+        setActiveShift(d && !d.error && d.id ? d : null);
+      }
+      if (accRes.ok) {
+        const d = await accRes.json();
+        setAccounts(Array.isArray(d) ? d : []);
+      }
+      if (coaRes.ok) {
+        const d = await coaRes.json();
+        setChartAccounts(Array.isArray(d) ? d : []);
+      }
+      if (jeRes.ok) {
+        const d = await jeRes.json();
+        setJournals(Array.isArray(d) ? d : []);
+      }
+      if (trfRes.ok) {
+        const d = await trfRes.json();
+        setTransfers(Array.isArray(d) ? d : []);
+      }
+      if (custRes.ok) {
+        const d = await custRes.json();
+        setCustomers(Array.isArray(d) ? d : []);
+      }
+      if (suppRes.ok) {
+        const d = await suppRes.json();
+        setSuppliers(Array.isArray(d) ? d : []);
+      }
     } catch (err) {
       console.error('Failed to load financial records:', err);
     } finally {

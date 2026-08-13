@@ -150,30 +150,40 @@ export const InventoryView: React.FC = () => {
   const loadAllData = async () => {
     try {
       const [led, prods, whs, uns, bts, grnList, trfList, supps, audList, dash] = await Promise.all([
-        apiFetch<InventoryLedger[]>('/inventory/ledger'),
-        apiFetch<Product[]>('/products'),
-        apiFetch<Warehouse[]>('/inventory/warehouses'),
-        apiFetch<Unit[]>('/inventory/units'),
-        apiFetch<StockBatch[]>('/inventory/batches'),
-        apiFetch<GoodsReceipt[]>('/inventory/grn'),
-        apiFetch<StockTransfer[]>('/inventory/transfers'),
-        apiFetch<Supplier[]>('/suppliers'),
-        apiFetch<InventoryAudit[]>('/inventory/audit'),
-        apiFetch<any>('/inventory/dashboard'),
+        apiFetch<InventoryLedger[]>('/inventory/ledger').catch(() => []),
+        apiFetch<Product[]>('/products').catch(() => []),
+        apiFetch<Warehouse[]>('/inventory/warehouses').catch(() => []),
+        apiFetch<Unit[]>('/inventory/units').catch(() => []),
+        apiFetch<StockBatch[]>('/inventory/batches').catch(() => []),
+        apiFetch<GoodsReceipt[]>('/inventory/grn').catch(() => []),
+        apiFetch<StockTransfer[]>('/inventory/transfers').catch(() => []),
+        apiFetch<Supplier[]>('/suppliers').catch(() => []),
+        apiFetch<InventoryAudit[]>('/inventory/audit').catch(() => []),
+        apiFetch<any>('/inventory/dashboard').catch(() => ({})),
       ]);
 
-      setLedger(led);
-      setProducts(prods);
-      setWarehouses(whs);
-      setUnits(uns);
-      setBatches(bts);
-      setGrns(grnList);
-      setTransfers(trfList);
-      setSuppliers(supps);
-      setAudits(audList);
-      setDashboardData(dash);
+      setLedger(Array.isArray(led) ? led : []);
+      setProducts(Array.isArray(prods) ? prods : []);
+      setWarehouses(Array.isArray(whs) ? whs : []);
+      setUnits(Array.isArray(uns) ? uns : []);
+      setBatches(Array.isArray(bts) ? bts : []);
+      setGrns(Array.isArray(grnList) ? grnList : []);
+      setTransfers(Array.isArray(trfList) ? trfList : []);
+      setSuppliers(Array.isArray(supps) ? supps : []);
+      setAudits(Array.isArray(audList) ? audList : []);
+      setDashboardData(dash && !dash.error ? dash : null);
     } catch (e) {
       console.error('Failed to load inventory data:', e);
+      setLedger([]);
+      setProducts([]);
+      setWarehouses([]);
+      setUnits([]);
+      setBatches([]);
+      setGrns([]);
+      setTransfers([]);
+      setSuppliers([]);
+      setAudits([]);
+      setDashboardData(null);
     }
   };
 
@@ -364,9 +374,10 @@ export const InventoryView: React.FC = () => {
 
   // CSV Export Handler
   const handleExportCSV = () => {
-    if (products.length === 0) return;
+    const safeProducts = Array.isArray(products) ? products : [];
+    if (safeProducts.length === 0) return;
     const headers = ['SKU', 'Barcode', 'Product Name', 'Category', 'Unit', 'Purchase Price', 'Sale Price', 'Current Stock', 'Min Stock', 'Stock Value'];
-    const rows = products.map((p) => [
+    const rows = safeProducts.map((p) => [
       `"${p.sku}"`,
       `"${p.barcode}"`,
       `"${p.name.replace(/"/g, '""')}"`,
@@ -483,7 +494,8 @@ export const InventoryView: React.FC = () => {
     return matchSearch && matchWh;
   });
 
-  const lowStockProducts = products.filter((p) => p.currentStock <= (p.minStock || p.reorderLevel || 5));
+  const safeProducts = Array.isArray(products) ? products : [];
+  const lowStockProducts = safeProducts.filter((p) => p.currentStock <= (p.minStock || p.reorderLevel || 5));
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -526,9 +538,9 @@ export const InventoryView: React.FC = () => {
 
           <button
             onClick={() => {
-              const rows = products.map((p) => `<tr><td>${p.sku}</td><td>${p.barcode}</td><td>${p.name}</td><td>${p.categoryName || ''}</td><td>${p.currentStock} ${p.unit}</td><td>Rs. ${(p.costPrice || p.purchasePrice || p.averageCost || 0).toLocaleString()}</td><td>Rs. ${(p.currentStock * (p.costPrice || p.purchasePrice || p.averageCost || 0)).toLocaleString()}</td></tr>`).join('');
+              const rows = safeProducts.map((p) => `<tr><td>${p.sku}</td><td>${p.barcode}</td><td>${p.name}</td><td>${p.categoryName || ''}</td><td>${p.currentStock} ${p.unit}</td><td>Rs. ${(p.costPrice || p.purchasePrice || p.averageCost || 0).toLocaleString()}</td><td>Rs. ${(p.currentStock * (p.costPrice || p.purchasePrice || p.averageCost || 0)).toLocaleString()}</td></tr>`).join('');
               handlePrintSlip('Inventory Valuation & Stock Report', `
-                <div class="header-info"><div>Total Items: ${products.length}</div><div>Valuation: Rs. ${(dashboardData?.totalInventoryValue || 0).toLocaleString()}</div></div>
+                <div class="header-info"><div>Total Items: ${safeProducts.length}</div><div>Valuation: Rs. ${(dashboardData?.totalInventoryValue || 0).toLocaleString()}</div></div>
                 <table><thead><tr><th>SKU</th><th>Barcode</th><th>Product Name</th><th>Category</th><th>Current Stock</th><th>Unit Cost</th><th>Total Value</th></tr></thead><tbody>${rows}</tbody></table>
               `);
             }}
@@ -543,7 +555,7 @@ export const InventoryView: React.FC = () => {
             onClick={() => {
               if (warehouses.length > 0) setGrnWarehouseId(warehouses[0].id);
               if (suppliers.length > 0) setGrnSupplierId(suppliers[0].id);
-              setGrnItems([{ productId: products[0]?.id || '', receivedQuantity: 1, purchasePrice: products[0]?.purchasePrice || 0 }]);
+              setGrnItems([{ productId: safeProducts[0]?.id || '', receivedQuantity: 1, purchasePrice: safeProducts[0]?.purchasePrice || 0 }]);
               setShowGrnModal(true);
             }}
             className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center space-x-1 shadow-lg shadow-emerald-600/20"
@@ -556,7 +568,7 @@ export const InventoryView: React.FC = () => {
             onClick={() => {
               if (warehouses.length > 0) setTrfFromWhId(warehouses[0].id);
               if (warehouses.length > 1) setTrfToWhId(warehouses[1].id);
-              setTrfItems([{ productId: products[0]?.id || '', quantity: 1 }]);
+              setTrfItems([{ productId: safeProducts[0]?.id || '', quantity: 1 }]);
               setShowTransferModal(true);
             }}
             className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl flex items-center space-x-1 shadow-lg shadow-blue-600/20"
@@ -567,7 +579,7 @@ export const InventoryView: React.FC = () => {
 
           <button
             onClick={() => {
-              if (products.length > 0) setSelectedProductId(products[0].id);
+              if (safeProducts.length > 0) setSelectedProductId(safeProducts[0].id);
               setShowAdjustModal(true);
             }}
             className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl flex items-center space-x-1 shadow-lg shadow-purple-600/20"
@@ -589,7 +601,7 @@ export const InventoryView: React.FC = () => {
 
         <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-1">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Products</p>
-          <p className="text-base font-extrabold text-purple-400 font-mono">{products.length} Items</p>
+          <p className="text-base font-extrabold text-purple-400 font-mono">{safeProducts.length} Items</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-1">
@@ -631,7 +643,7 @@ export const InventoryView: React.FC = () => {
             activeTab === 'PRODUCTS' ? 'bg-purple-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-slate-200'
           }`}
         >
-          Product Master ({products.length})
+          Product Master ({safeProducts.length})
         </button>
         <button
           onClick={() => setActiveTab('LEDGER')}
@@ -995,7 +1007,7 @@ export const InventoryView: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-medium">
                 {warehouses.map((w) => {
-                  const wStock = products.filter((p) => p.warehouseId === w.id).reduce((sum, p) => sum + p.currentStock, 0);
+                  const wStock = safeProducts.filter((p) => p.warehouseId === w.id).reduce((sum, p) => sum + p.currentStock, 0);
                   return (
                     <tr key={w.id} className="hover:bg-slate-800/40">
                       <td className="p-3.5 font-mono text-purple-400 font-bold">{w.code}</td>
@@ -1342,7 +1354,7 @@ export const InventoryView: React.FC = () => {
                   onChange={(e) => setSelectedProductId(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none"
                 >
-                  {products.map((p) => (
+                  {safeProducts.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name} ({p.sku}) - Current: {p.currentStock} {p.unit}
                     </option>
@@ -1670,7 +1682,7 @@ export const InventoryView: React.FC = () => {
                         <select
                           value={item.productId}
                           onChange={(e) => {
-                            const p = products.find((prod) => prod.id === e.target.value);
+                            const p = safeProducts.find((prod) => prod.id === e.target.value);
                             const updated = [...grnItems];
                             updated[idx].productId = e.target.value;
                             if (p) updated[idx].purchasePrice = p.purchasePrice;
@@ -1678,7 +1690,7 @@ export const InventoryView: React.FC = () => {
                           }}
                           className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-100 focus:outline-none"
                         >
-                          {products.map((p) => (
+                          {safeProducts.map((p) => (
                             <option key={p.id} value={p.id}>
                               {p.name} ({p.unit})
                             </option>
@@ -1850,7 +1862,7 @@ export const InventoryView: React.FC = () => {
                           }}
                           className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-100 focus:outline-none"
                         >
-                          {products.map((p) => (
+                          {safeProducts.map((p) => (
                             <option key={p.id} value={p.id}>
                               {p.name} (Stock: {p.currentStock} {p.unit})
                             </option>

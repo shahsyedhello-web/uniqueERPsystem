@@ -53,17 +53,21 @@ export const EmployeesView: React.FC = () => {
   const loadAllData = async () => {
     try {
       const [empRes, deptRes, attRes, payRes] = await Promise.all([
-        apiFetch<Employee[]>('/employees'),
-        apiFetch<Department[]>('/departments'),
-        apiFetch<Attendance[]>('/employees/attendance'),
-        apiFetch<Payroll[]>('/employees/payroll'),
+        apiFetch<Employee[]>('/employees').catch(() => []),
+        apiFetch<Department[]>('/departments').catch(() => []),
+        apiFetch<Attendance[]>('/employees/attendance').catch(() => []),
+        apiFetch<Payroll[]>('/employees/payroll').catch(() => []),
       ]);
-      setEmployees(empRes);
-      setDepartments(deptRes);
-      setAttendances(attRes);
-      setPayrolls(payRes);
+      setEmployees(Array.isArray(empRes) ? empRes : []);
+      setDepartments(Array.isArray(deptRes) ? deptRes : []);
+      setAttendances(Array.isArray(attRes) ? attRes : []);
+      setPayrolls(Array.isArray(payRes) ? payRes : []);
     } catch (e) {
       console.error(e);
+      setEmployees([]);
+      setDepartments([]);
+      setAttendances([]);
+      setPayrolls([]);
     }
   };
 

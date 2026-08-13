@@ -209,24 +209,28 @@ export const POSView: React.FC = () => {
   const loadCatalog = async () => {
     try {
       const [prods, cats, custs] = await Promise.all([
-        apiFetch<Product[]>('/products'),
-        apiFetch<Category[]>('/categories'),
-        apiFetch<Customer[]>('/customers'),
+        apiFetch<Product[]>('/products').catch(() => []),
+        apiFetch<Category[]>('/categories').catch(() => []),
+        apiFetch<Customer[]>('/customers').catch(() => []),
       ]);
-      setProducts(prods);
-      setCategories(cats);
-      setCustomers(custs);
+      setProducts(Array.isArray(prods) ? prods : []);
+      setCategories(Array.isArray(cats) ? cats : []);
+      setCustomers(Array.isArray(custs) ? custs : []);
     } catch (e) {
       console.error(e);
+      setProducts([]);
+      setCategories([]);
+      setCustomers([]);
     }
   };
 
   const loadHeldSales = async () => {
     try {
       const data = await apiFetch<Sale[]>('/sales?status=HELD');
-      setHeldSales(data);
+      setHeldSales(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
+      setHeldSales([]);
     }
   };
 
@@ -235,8 +239,9 @@ export const POSView: React.FC = () => {
     const code = rawCode.trim().toLowerCase();
     if (!code) return;
 
+    const safeProducts = Array.isArray(products) ? products : [];
     // Match exact barcode or SKU or variant barcode
-    const matched = products.find(
+    const matched = safeProducts.find(
       (p) =>
         p.barcode.toLowerCase() === code ||
         p.sku.toLowerCase() === code ||
@@ -594,7 +599,8 @@ export const POSView: React.FC = () => {
     }
   };
 
-  const filteredProducts = products.filter((p) => {
+  const safeProducts = Array.isArray(products) ? products : [];
+  const filteredProducts = safeProducts.filter((p) => {
     const matchesCat = selectedCategory === 'ALL' || p.categoryId === selectedCategory;
     const matchesSearch =
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

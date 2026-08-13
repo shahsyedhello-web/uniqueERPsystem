@@ -99,18 +99,25 @@ export const ProductsView: React.FC = () => {
   const loadData = async () => {
     try {
       const [prods, cats, supps] = await Promise.all([
-        apiFetch<Product[]>('/products'),
-        apiFetch<Category[]>('/categories'),
-        apiFetch<Supplier[]>('/suppliers'),
+        apiFetch<Product[]>('/products').catch(() => []),
+        apiFetch<Category[]>('/categories').catch(() => []),
+        apiFetch<Supplier[]>('/suppliers').catch(() => []),
       ]);
-      setProducts(prods);
-      setCategories(cats);
-      setSuppliers(supps);
-      if (cats.length > 0 && !formData.categoryId) {
-        setFormData((prev) => ({ ...prev, categoryId: cats[0].id }));
+      const safeProds = Array.isArray(prods) ? prods : [];
+      const safeCats = Array.isArray(cats) ? cats : [];
+      const safeSupps = Array.isArray(supps) ? supps : [];
+
+      setProducts(safeProds);
+      setCategories(safeCats);
+      setSuppliers(safeSupps);
+      if (safeCats.length > 0 && !formData.categoryId) {
+        setFormData((prev) => ({ ...prev, categoryId: safeCats[0].id }));
       }
     } catch (e) {
       console.error(e);
+      setProducts([]);
+      setCategories([]);
+      setSuppliers([]);
     }
   };
 
@@ -201,7 +208,8 @@ export const ProductsView: React.FC = () => {
     });
   };
 
-  const filtered = products.filter((p) => {
+  const safeProducts = Array.isArray(products) ? products : [];
+  const filtered = safeProducts.filter((p) => {
     const matchesCat = selectedCategory === 'ALL' || p.categoryId === selectedCategory;
     const matchesSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||

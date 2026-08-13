@@ -59,6 +59,11 @@ async function initPrismaConnection() {
         await prismaInstance.$connect();
         isPrismaConnected = true;
         console.log('[Prisma] Connected successfully to PostgreSQL database.');
+
+        // Trigger one-time background migration from JSON to Postgres if DB connected
+        import('../../scripts/migrate-json-to-postgres')
+          .then((m) => m.migrateJsonToPostgres())
+          .catch((err) => console.warn('[Prisma] Background JSON migration error:', err));
       } else {
         console.warn('[Prisma] Required Prisma packages not available at runtime. Using store fallback.');
         isPrismaConnected = false;
@@ -85,6 +90,10 @@ export async function ensurePrismaInitialized() {
 // Export initialization helper to be called lazily inside request handlers
 export function getPrisma() {
   return prismaInstance;
+}
+
+export function isDbConnected() {
+  return isPrismaConnected;
 }
 
 export const prisma = new Proxy(

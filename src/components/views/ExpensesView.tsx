@@ -21,9 +21,10 @@ export const ExpensesView: React.FC = () => {
   const loadExpenses = async () => {
     try {
       const data = await apiFetch<Expense[]>('/expenses');
-      setExpenses(data);
+      setExpenses(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
+      setExpenses([]);
     }
   };
 

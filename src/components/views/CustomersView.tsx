@@ -25,9 +25,10 @@ export const CustomersView: React.FC = () => {
   const loadCustomers = async () => {
     try {
       const data = await apiFetch<Customer[]>('/customers');
-      setCustomers(data);
+      setCustomers(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
+      setCustomers([]);
     }
   };
 

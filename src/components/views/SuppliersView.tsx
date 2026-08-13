@@ -29,9 +29,10 @@ export const SuppliersView: React.FC = () => {
   const loadSuppliers = async () => {
     try {
       const data = await apiFetch<Supplier[]>('/suppliers');
-      setSuppliers(data);
+      setSuppliers(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
+      setSuppliers([]);
     }
   };
 

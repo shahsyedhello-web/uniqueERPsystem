@@ -28,13 +28,15 @@ export const CategoriesView: React.FC = () => {
   const loadCategories = async () => {
     try {
       const [catData, prodData] = await Promise.all([
-        apiFetch<Category[]>('/categories'),
+        apiFetch<Category[]>('/categories').catch(() => []),
         apiFetch<Product[]>('/products').catch(() => []),
       ]);
-      setCategories(catData);
-      setProducts(prodData);
+      setCategories(Array.isArray(catData) ? catData : []);
+      setProducts(Array.isArray(prodData) ? prodData : []);
     } catch (e) {
       console.error(e);
+      setCategories([]);
+      setProducts([]);
     }
   };
 
@@ -61,17 +63,20 @@ export const CategoriesView: React.FC = () => {
     }
   };
 
+  const safeCategories = Array.isArray(categories) ? categories : [];
+  const safeProducts = Array.isArray(products) ? products : [];
+
   const handleDeleteClick = (c: Category) => {
     setDeletingCategory(c);
     setDeletingError(null);
     // Default target category to first available other category
-    const other = categories.find((cat) => cat.id !== c.id);
+    const other = safeCategories.find((cat) => cat.id !== c.id);
     setTargetCategoryId(other ? other.id : '');
   };
 
   const confirmDeleteCategory = async () => {
     if (!deletingCategory) return;
-    const linkedCount = products.filter((p) => p.categoryId === deletingCategory.id).length;
+    const linkedCount = safeProducts.filter((p) => p.categoryId === deletingCategory.id).length;
 
     if (linkedCount > 0 && !targetCategoryId) {
       setDeletingError('Please select a destination category to move the linked products to.');
@@ -136,8 +141,8 @@ export const CategoriesView: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-medium">
-            {categories.map((c) => {
-              const productCount = products.filter((p) => p.categoryId === c.id).length;
+            {safeCategories.map((c) => {
+              const productCount = safeProducts.filter((p) => p.categoryId === c.id).length;
               return (
                 <tr key={c.id} className="hover:bg-slate-800/40">
                   <td className="p-3.5 font-bold text-slate-100">{c.name}</td>
@@ -251,8 +256,8 @@ export const CategoriesView: React.FC = () => {
       )}
       {/* DELETE CATEGORY CONFIRMATION MODAL */}
       {deletingCategory && (() => {
-        const linkedProducts = products.filter((p) => p.categoryId === deletingCategory.id);
-        const otherCategories = categories.filter((c) => c.id !== deletingCategory.id);
+        const linkedProducts = safeProducts.filter((p) => p.categoryId === deletingCategory.id);
+        const otherCategories = safeCategories.filter((c) => c.id !== deletingCategory.id);
 
         return (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">

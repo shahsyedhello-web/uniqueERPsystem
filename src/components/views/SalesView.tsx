@@ -23,12 +23,15 @@ export const SalesView: React.FC = () => {
   const loadSales = async () => {
     try {
       const data = await apiFetch<Sale[]>('/sales');
-      setSales(data);
+      setSales(Array.isArray(data) ? data : []);
     } catch (e: any) {
       console.error('Failed to load sales history:', e);
+      setSales([]);
       showToast(e.message || 'Failed to load sales history.', 'error');
     }
   };
+
+  const safeSales = Array.isArray(sales) ? sales : [];
 
   const handleRefund = async (saleId: string) => {
     if (!confirm('Refund this invoice and restore product inventory?')) return;
@@ -58,7 +61,7 @@ export const SalesView: React.FC = () => {
     }
   };
 
-  const filtered = sales.filter(
+  const filtered = safeSales.filter(
     (s) =>
       s.invoiceNo.toLowerCase().includes(search.toLowerCase()) ||
       s.customerName?.toLowerCase().includes(search.toLowerCase()) ||

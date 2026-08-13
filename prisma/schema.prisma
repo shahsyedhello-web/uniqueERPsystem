@@ -378,3 +378,182 @@ model ActivityLog {
   ipAddress String?
   createdAt DateTime @default(now())
 }
+
+model Branch {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  address   String?
+  phone     String?
+  isMain    Boolean  @default(false)
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+}
+
+model Warehouse {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  type        String   @default("MAIN")
+  isMain      Boolean  @default(false)
+  location    String?
+  description String?
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+}
+
+model StockBatch {
+  id            String    @id @default(uuid())
+  batchNo       String
+  productId     String
+  quantity      Float
+  purchasePrice Float
+  expiryDate    DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+model GoodsReceipt {
+  id           String   @id @default(uuid())
+  grnNo        String   @unique
+  purchaseId   String?
+  supplierId   String?
+  receivedDate DateTime @default(now())
+  items        String?
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+model StockAlert {
+  id        String   @id @default(uuid())
+  productId String
+  type      String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model InventoryAudit {
+  id            String   @id @default(uuid())
+  productId     String
+  expectedStock Float
+  actualStock   Float
+  difference    Float
+  reason        String?
+  auditedByName String
+  createdAt     DateTime @default(now())
+}
+
+model CashRegister {
+  id             String   @id @default(uuid())
+  counterCode    String   @unique
+  name           String
+  branchId       String?
+  isOnline       Boolean  @default(true)
+  isDrawerOpen   Boolean  @default(false)
+  currentBalance Float    @default(0)
+  createdAt      DateTime @default(now())
+}
+
+model CashDrawerTransaction {
+  id              String   @id @default(uuid())
+  shiftId         String?
+  registerId      String?
+  type            String
+  amount          Float
+  reason          String?
+  performedByName String
+  createdAt       DateTime @default(now())
+}
+
+model BankAccount {
+  id            String   @id @default(uuid())
+  accountName   String
+  accountNumber String   @unique
+  bankName      String
+  branch        String?
+  balance       Float    @default(0)
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+}
+
+model ChartAccount {
+  id             String   @id @default(uuid())
+  code           String   @unique
+  name           String
+  type           String
+  parentCategory String?
+  balance        Float    @default(0)
+  description    String?
+  isSystem       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+}
+
+model JournalEntry {
+  id            String   @id @default(uuid())
+  entryNo       String   @unique
+  date          DateTime @default(now())
+  description   String
+  referenceNo   String?
+  debitAmount   Float    @default(0)
+  creditAmount  Float    @default(0)
+  status        String   @default("POSTED")
+  createdByName String
+  createdAt     DateTime @default(now())
+}
+
+model AccountTransfer {
+  id            String   @id @default(uuid())
+  transferNo    String   @unique
+  fromAccountId String
+  toAccountId   String
+  amount        Float
+  date          DateTime @default(now())
+  referenceNo   String?
+  notes         String?
+  createdByName String
+  createdAt     DateTime @default(now())
+}
+
+model SupplierLedger {
+  id           String   @id @default(uuid())
+  supplierId   String
+  type         String
+  amount       Float
+  balanceAfter Float
+  referenceNo  String
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+model BankReconciliation {
+  id               String   @id @default(uuid())
+  bankAccountId    String
+  statementDate    DateTime
+  statementBalance Float
+  bookBalance      Float
+  difference       Float
+  status           String   @default("BALANCED")
+  createdByName    String
+  createdAt        DateTime @default(now())
+}
+
+model PrintJob {
+  id          String   @id @default(uuid())
+  title       String
+  type        String
+  content     String
+  status      String   @default("PENDING")
+  printerName String?
+  copies      Int      @default(1)
+  error       String?
+  createdAt   DateTime @default(now())
+}

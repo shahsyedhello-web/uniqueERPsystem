@@ -53,20 +53,20 @@ app.get('/api/health', (req, res) => {
 // Diagnostic database health check endpoint
 app.get('/api/health/db', async (req, res) => {
   try {
-    const { ensurePrismaInitialized, getPrisma } = await import('./prismaService');
+    const { ensurePrismaInitialized, getPrisma, isDbConnected } = await import('./prismaService');
     await ensurePrismaInitialized();
     const p = getPrisma();
-    if (p) {
+    if (p && isDbConnected()) {
       await p.$queryRaw`SELECT 1`;
-      return res.json({ status: 'ok', database: 'PostgreSQL (Prisma)' });
+      return res.json({ status: 'ok', database: 'PostgreSQL' });
     } else {
-      return res.json({ status: 'ok', database: 'Fallback Store (JSON)' });
+      return res.status(503).json({ status: 'error', message: 'PostgreSQL database unavailable' });
     }
   } catch (err: any) {
     console.warn('[DB Health Check Exception]:', err?.message || err);
-    return res.status(200).json({
+    return res.status(503).json({
       status: 'error',
-      message: 'Database connection failed',
+      message: 'PostgreSQL database connection failed',
     });
   }
 });

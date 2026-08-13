@@ -41,6 +41,8 @@ export interface Category {
   description?: string;
   status: 'ACTIVE' | 'INACTIVE';
   createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string;
 }
 
 export interface ProductVariant {
@@ -205,12 +207,14 @@ export interface Product {
   weight?: number;
   status: 'ACTIVE' | 'INACTIVE';
   supplierId?: string;
+  supplierName?: string;
   taxRate: number; // percentage e.g. 5, 12, 18
   isKitchenItem?: boolean;
   variants?: ProductVariant[];
   hasRecipe?: boolean;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string;
 }
 
 export interface InventoryLedger {
@@ -353,7 +357,7 @@ export interface Sale {
   paidAmount: number;
   changeAmount: number;
   paymentMethod: 'CASH' | 'CARD' | 'MOBILE' | 'CREDIT' | 'SPLIT' | string;
-  paymentDetails?: {
+  paymentDetails?: string | {
     cash?: number;
     card?: number;
     mobile?: number;

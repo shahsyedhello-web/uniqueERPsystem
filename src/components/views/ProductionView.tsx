@@ -28,21 +28,28 @@ export const ProductionView: React.FC = () => {
   const loadData = async () => {
     try {
       const [recs, bats, prods] = await Promise.all([
-        apiFetch<Recipe[]>('/production/recipes'),
-        apiFetch<ProductionBatch[]>('/production/batches'),
-        apiFetch<Product[]>('/products'),
+        apiFetch<Recipe[]>('/production/recipes').catch(() => []),
+        apiFetch<ProductionBatch[]>('/production/batches').catch(() => []),
+        apiFetch<Product[]>('/products').catch(() => []),
       ]);
-      setRecipes(recs);
-      setBatches(bats);
-      setProducts(prods);
+      setRecipes(Array.isArray(recs) ? recs : []);
+      setBatches(Array.isArray(bats) ? bats : []);
+      setProducts(Array.isArray(prods) ? prods : []);
     } catch (e) {
       console.error(e);
+      setRecipes([]);
+      setBatches([]);
+      setProducts([]);
     }
   };
 
+  const safeRecipes = Array.isArray(recipes) ? recipes : [];
+  const safeBatches = Array.isArray(batches) ? batches : [];
+  const safeProducts = Array.isArray(products) ? products : [];
+
   const handleAddIngredientRow = () => {
-    if (products.length === 0) return;
-    setIngredients((prev) => [...prev, { rawMaterialId: products[0].id, quantity: 1, unit: 'kg' }]);
+    if (safeProducts.length === 0) return;
+    setIngredients((prev) => [...prev, { rawMaterialId: safeProducts[0].id, quantity: 1, unit: 'kg' }]);
   };
 
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
@@ -177,7 +184,7 @@ export const ProductionView: React.FC = () => {
           </h2>
 
           <div className="space-y-3">
-            {recipes.map((r) => (
+            {safeRecipes.map((r) => (
               <div key={r.id} className="p-3 bg-slate-800/60 rounded-xl space-y-2 border border-slate-800">
                 <div className="flex justify-between items-center">
                   <span className="font-bold text-slate-100 text-xs">{r.productName}</span>
@@ -213,7 +220,7 @@ export const ProductionView: React.FC = () => {
               </div>
             ))}
 
-            {recipes.length === 0 && (
+            {safeRecipes.length === 0 && (
               <div className="text-center py-12 text-slate-500 text-xs">
                 No recipes formulated yet. Click "Create Recipe" to link raw materials to finished bakery goods.
               </div>
@@ -228,7 +235,7 @@ export const ProductionView: React.FC = () => {
           </h2>
 
           <div className="space-y-2">
-            {batches.map((b) => (
+            {safeBatches.map((b) => (
               <div key={b.id} className="p-3 bg-slate-800/60 rounded-xl flex justify-between items-center text-xs">
                 <div>
                   <div className="font-bold text-slate-200">{b.productName} (#{b.batchNo})</div>
@@ -250,7 +257,7 @@ export const ProductionView: React.FC = () => {
               </div>
             ))}
 
-            {batches.length === 0 && (
+            {safeBatches.length === 0 && (
               <div className="text-center py-12 text-slate-500 text-xs">No production batches executed yet.</div>
             )}
           </div>
@@ -278,7 +285,7 @@ export const ProductionView: React.FC = () => {
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100"
                 >
                   <option value="">Choose Finished Good...</option>
-                  {products.map((p) => (
+                  {safeProducts.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -321,7 +328,7 @@ export const ProductionView: React.FC = () => {
                       }}
                       className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200"
                     >
-                      {products.map((p) => (
+                      {safeProducts.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
                         </option>
@@ -383,7 +390,7 @@ export const ProductionView: React.FC = () => {
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100"
                 >
                   <option value="">Choose Recipe...</option>
-                  {recipes.map((r) => (
+                  {safeRecipes.map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.productName} (Standard Yield: {r.yieldQuantity})
                     </option>

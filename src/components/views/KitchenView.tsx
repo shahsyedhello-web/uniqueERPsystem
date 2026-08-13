@@ -15,9 +15,10 @@ export const KitchenView: React.FC = () => {
   const loadOrders = async () => {
     try {
       const data = await apiFetch<KitchenOrder[]>('/kitchen');
-      setOrders(data);
+      setOrders(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
+      setOrders([]);
     }
   };
 
@@ -33,9 +34,10 @@ export const KitchenView: React.FC = () => {
     }
   };
 
-  const pending = orders.filter((o) => o.status === 'PENDING');
-  const preparing = orders.filter((o) => o.status === 'PREPARING');
-  const ready = orders.filter((o) => o.status === 'READY');
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const pending = safeOrders.filter((o) => o.status === 'PENDING');
+  const preparing = safeOrders.filter((o) => o.status === 'PREPARING');
+  const ready = safeOrders.filter((o) => o.status === 'READY');
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto select-none">
