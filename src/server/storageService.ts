@@ -10,29 +10,49 @@ export async function uploadProductImage(
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
   const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
 
+  // 1. Validate MIME Type
+  const validMimes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+  const normalizedMime = (mimeType || 'image/png').toLowerCase();
+  if (!validMimes.includes(normalizedMime)) {
+    throw new Error('IMAGE_INVALID_TYPE: Invalid image type. Supported formats: PNG, JPG, JPEG, WEBP.');
+  }
+
+  // 2. Decode/Buffer Conversion & Size Validation (Max 5MB)
+  let buffer: Buffer;
+  if (typeof fileBuffer === 'string') {
+    const base64Match = fileBuffer.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+    const base64Data = base64Match ? base64Match[2] : fileBuffer.replace(/^data:image\/\w+;base64,/, '');
+    buffer = Buffer.from(base64Data, 'base64');
+  } else {
+    buffer = fileBuffer;
+  }
+
+  if (buffer.length > 5 * 1024 * 1024) {
+    throw new Error('IMAGE_TOO_LARGE: Selected image exceeds maximum 5MB size limit.');
+  }
+
+  // 3. Vercel Blob Upload
   if (blobToken) {
     try {
-      const buffer = typeof fileBuffer === 'string'
-        ? Buffer.from(fileBuffer.replace(/^data:image\/\w+;base64,/, ''), 'base64')
-        : fileBuffer;
-
-      const blob = await put(`products/${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`, buffer, {
+      const ext = normalizedMime.includes('jpeg') || normalizedMime.includes('jpg') ? 'jpg' : normalizedMime.includes('webp') ? 'webp' : 'png';
+      const safeFilename = `products/${Date.now()}-${(filename || 'product').replace(/[^a-zA-Z0-9.-]/g, '_')}.${ext}`;
+      
+      const blob = await put(safeFilename, buffer, {
         access: 'public',
-        contentType: mimeType || 'image/png',
+        contentType: normalizedMime,
         token: blobToken,
       });
-      console.log('[Storage] Uploaded image to Vercel Blob:', blob.url);
+      console.log('[Storage] Uploaded image to Vercel Blob successfully:', blob.url);
       return blob.url;
     } catch (err: any) {
       console.error('[Storage] Vercel Blob upload failed:', err);
-      if (isProd) {
-        throw new Error('IMAGE_UPLOAD_FAILED: Failed to upload image to Vercel Blob storage.');
-      }
+      throw new Error(`IMAGE_UPLOAD_FAILED: Failed to upload image to Vercel Blob storage: ${err?.message || 'unknown error'}`);
     }
   }
 
-  if (isProd) {
-    throw new Error('IMAGE_STORAGE_NOT_CONFIGURED: Product image storage is not configured. Please configure Vercel Blob.');
+  // 4. Storage not configured check in production
+  if (isProd || !blobToken) {
+    throw new Error('IMAGE_STORAGE_NOT_CONFIGURED: Product image storage is not configured. Please configure Vercel Blob (BLOB_READ_WRITE_TOKEN).');
   }
 
   // Development fallback to local filesystem
@@ -41,15 +61,9 @@ export async function uploadProductImage(
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
-  const safeName = `prod_${Date.now()}_${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+  const safeName = `prod_${Date.now()}_${(filename || 'product').replace(/[^a-zA-Z0-9.-]/g, '_')}`;
   const filePath = path.join(uploadsDir, safeName);
-
-  if (typeof fileBuffer === 'string') {
-    const base64Data = fileBuffer.replace(/^data:image\/\w+;base64,/, '');
-    fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-  } else {
-    fs.writeFileSync(filePath, fileBuffer);
-  }
+  fs.writeFileSync(filePath, buffer);
 
   return `/uploads/products/${safeName}`;
 }
@@ -76,3 +90,4 @@ export async function deleteProductImage(imageUrl: string): Promise<void> {
     }
   }
 }
+

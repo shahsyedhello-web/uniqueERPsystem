@@ -9,6 +9,28 @@ const router = Router();
 
 router.use(authenticate);
 
+function handleProductError(res: any, err: any, defaultMessage: string) {
+  const msg = err?.message || String(err || '');
+  console.error(`[Products Error]:`, err);
+
+  if (msg.includes('IMAGE_STORAGE_NOT_CONFIGURED')) {
+    return res.status(503).json({ error: msg });
+  }
+  if (msg.includes('IMAGE_UPLOAD_FAILED')) {
+    return res.status(502).json({ error: msg });
+  }
+  if (msg.includes('IMAGE_INVALID_TYPE')) {
+    return res.status(400).json({ error: msg });
+  }
+  if (msg.includes('IMAGE_TOO_LARGE')) {
+    return res.status(413).json({ error: msg });
+  }
+  if (msg.includes('DATABASE_UNAVAILABLE') || msg.includes("Can't reach database server")) {
+    return res.status(503).json({ error: 'DATABASE_UNAVAILABLE: Database connection is unavailable.' });
+  }
+  return res.status(500).json({ error: msg || defaultMessage });
+}
+
 // Helper function to generate EAN-13 barcode
 function createEan13(): string {
   const base12 = '200' + Math.floor(100000000 + Math.random() * 900000000).toString();
@@ -41,8 +63,7 @@ router.post('/upload-image', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), asy
     const imageUrl = await uploadProductImage(imageBase64, safeFilename, `image/${ext}`);
     return res.json({ success: true, imageUrl, message: 'Image uploaded successfully.' });
   } catch (err: any) {
-    console.error('[Product Image Upload Error]:', err);
-    return res.status(500).json({ error: err?.message || 'Failed to upload product image.' });
+    return handleProductError(res, err, 'Failed to upload product image.');
   }
 });
 
@@ -365,8 +386,7 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
 
     return res.status(201).json(newProd);
   } catch (err: any) {
-    console.error('[Products POST Error]:', err);
-    return res.status(500).json({ error: err?.message || 'Failed to create product.' });
+    return handleProductError(res, err, 'Failed to create product.');
   }
 });
 
@@ -576,8 +596,7 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
 
     return res.json(updatedProd);
   } catch (err: any) {
-    console.error('[Products PUT Error]:', err);
-    return res.status(500).json({ error: err?.message || 'Failed to update product.' });
+    return handleProductError(res, err, 'Failed to update product.');
   }
 });
 
