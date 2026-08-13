@@ -207,9 +207,20 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
 });
 
 router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: AuthRequest, res) => {
-  const { id } = req.params;
+  const rawId = req.params.id;
+  const cleanId = String(rawId || '').trim();
+
+  console.log('EDIT PRODUCT REQUEST');
+  console.log('product ID received:', rawId);
+  console.log('product ID type:', typeof rawId);
+  console.log('product ID length:', rawId ? String(rawId).length : 0);
+
   const db = loadDB();
-  const index = db.products.findIndex((p) => p.id === id);
+  let index = db.products.findIndex(
+    (p) => p.id === cleanId || String(p.id || '').trim().toLowerCase() === cleanId.toLowerCase()
+  );
+
+  console.log('database lookup result:', index !== -1 ? 'FOUND' : 'NOT FOUND');
 
   if (index === -1) {
     return res.status(404).json({ error: 'Product not found.' });
@@ -219,7 +230,10 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
 
   if (req.body.sku && req.body.sku.trim().toLowerCase() !== existing.sku.toLowerCase()) {
     const duplicateSku = db.products.some(
-      (p) => p.id !== id && p.sku.trim().toLowerCase() === req.body.sku.trim().toLowerCase()
+      (p) =>
+        p.id !== existing.id &&
+        String(p.id).trim().toLowerCase() !== cleanId.toLowerCase() &&
+        p.sku.trim().toLowerCase() === req.body.sku.trim().toLowerCase()
     );
     if (duplicateSku) {
       return res.status(400).json({ error: `SKU "${req.body.sku}" already exists on another product.` });
@@ -228,7 +242,11 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
 
   if (req.body.barcode && req.body.barcode.trim() !== (existing.barcode || '')) {
     const duplicateBarcode = db.products.some(
-      (p) => p.id !== id && p.barcode && p.barcode.trim() === req.body.barcode.trim()
+      (p) =>
+        p.id !== existing.id &&
+        String(p.id).trim().toLowerCase() !== cleanId.toLowerCase() &&
+        p.barcode &&
+        p.barcode.trim() === req.body.barcode.trim()
     );
     if (duplicateBarcode) {
       return res.status(400).json({ error: `Barcode "${req.body.barcode}" already exists on another product.` });
@@ -236,7 +254,9 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
   }
 
   const targetCatId = req.body.categoryId ? String(req.body.categoryId).trim() : existing.categoryId;
-  const targetCategory = db.categories.find((c) => c.id === targetCatId);
+  const targetCategory = db.categories.find(
+    (c) => c.id === targetCatId || String(c.id).trim().toLowerCase() === targetCatId.toLowerCase()
+  );
 
   if (!targetCategory) {
     return res.status(400).json({
@@ -244,9 +264,14 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
     });
   }
 
+  // Preserve image if not explicitly set/cleared in req.body
+  const finalImage = req.body.image !== undefined ? req.body.image : (req.body.imageUrl !== undefined ? req.body.imageUrl : existing.image);
+
   const updated: Product = {
     ...existing,
     ...req.body,
+    id: existing.id, // Ensure primary key is preserved
+    image: finalImage,
     categoryId: targetCategory.id,
     categoryName: targetCategory.name,
     purchasePrice: Number(req.body.purchasePrice ?? existing.purchasePrice),
@@ -260,14 +285,18 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
 
   db.products[index] = updated;
   saveDB();
+  logActivity('system', req.user?.name || 'User', 'Update Product', 'Products', `Updated product ${updated.name} (${updated.sku})`);
   res.json(updated);
 });
 
 router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: AuthRequest, res) => {
-  const { id } = req.params;
+  const rawId = req.params.id;
+  const cleanId = String(rawId || '').trim();
   const db = loadDB();
 
-  const product = db.products.find((p) => p.id === id);
+  const product = db.products.find(
+    (p) => p.id === cleanId || String(p.id || '').trim().toLowerCase() === cleanId.toLowerCase()
+  );
   if (!product) {
     return res.status(404).json({ error: 'Product not found.' });
   }
@@ -279,8 +308,10 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: Auth
     });
   }
 
+  const targetId = product.id;
+
   // Check references in Sales
-  const hasSales = db.sales?.some((s) => s.items?.some((item: any) => item.productId === id));
+  const hasSales = db.sales?.some((s) => s.items?.some((item: any) => item.productId === targetId));
   if (hasSales) {
     return res.status(400).json({
       error: `Cannot delete product "${product.name}". It is referenced in existing sales transaction history. You can edit its status to "INACTIVE" to archive it instead.`
@@ -288,7 +319,7 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: Auth
   }
 
   // Check references in Purchases
-  const hasPurchases = db.purchases?.some((p) => p.items?.some((item: any) => item.productId === id));
+  const hasPurchases = db.purchases?.some((p) => p.items?.some((item: any) => item.productId === targetId));
   if (hasPurchases) {
     return res.status(400).json({
       error: `Cannot delete product "${product.name}". It is referenced in supplier purchase orders. You can edit its status to "INACTIVE" to archive it instead.`
@@ -296,7 +327,7 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: Auth
   }
 
   // Check references in Recipes
-  const hasRecipes = db.recipes?.some((r) => r.productId === id || r.ingredients?.some((ing: any) => ing.productId === id));
+  const hasRecipes = db.recipes?.some((r) => r.productId === targetId || r.ingredients?.some((ing: any) => ing.productId === targetId));
   if (hasRecipes) {
     return res.status(400).json({
       error: `Cannot delete product "${product.name}". It is linked to production recipes. Remove it from recipes or set status to "INACTIVE" to archive it instead.`
@@ -304,8 +335,8 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: Auth
   }
 
   // Check references in Inventory Transfers / Logs
-  const hasInventoryLogs = db.inventoryLogs?.some((log) => log.productId === id && log.type !== 'STOCK_IN');
-  const hasTransfers = db.transfers?.some((t) => t.items?.some((item: any) => item.productId === id));
+  const hasInventoryLogs = db.inventoryLogs?.some((log) => log.productId === targetId && log.type !== 'STOCK_IN');
+  const hasTransfers = db.transfers?.some((t) => t.items?.some((item: any) => item.productId === targetId));
   if (hasInventoryLogs || hasTransfers) {
     return res.status(400).json({
       error: `Cannot delete product "${product.name}". It has recorded inventory movements or branch transfers. Set its status to "INACTIVE" to archive it instead.`
@@ -314,10 +345,10 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), (req: Auth
 
   // Also clean initial inventory log if only initial setup log exists
   if (db.inventoryLogs) {
-    db.inventoryLogs = db.inventoryLogs.filter((log) => log.productId !== id);
+    db.inventoryLogs = db.inventoryLogs.filter((log) => log.productId !== targetId);
   }
 
-  db.products = db.products.filter((p) => p.id !== id);
+  db.products = db.products.filter((p) => p.id !== targetId);
   saveDB();
   logActivity('system', 'User', 'Delete Product', 'Products', `Deleted product ${product.name} (${product.sku})`);
 

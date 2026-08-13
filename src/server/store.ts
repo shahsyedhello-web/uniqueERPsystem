@@ -273,6 +273,32 @@ export function loadDB(forceReload = false): DBData {
     try {
       const raw = fs.readFileSync(activeFile, 'utf-8');
       dbInMemory = JSON.parse(raw);
+
+      // In serverless environments, if loading from /tmp, merge any base records from DB_FILE that are missing in /tmp
+      if (activeFile === TMP_DB_FILE && fs.existsSync(DB_FILE)) {
+        try {
+          const rawBase = fs.readFileSync(DB_FILE, 'utf-8');
+          const baseDB = JSON.parse(rawBase);
+          if (baseDB && Array.isArray(baseDB.products)) {
+            if (!dbInMemory!.products) dbInMemory!.products = [];
+            for (const p of baseDB.products) {
+              if (!dbInMemory!.products.some((existing: any) => existing.id === p.id || String(existing.id).trim().toLowerCase() === String(p.id).trim().toLowerCase())) {
+                dbInMemory!.products.push(p);
+              }
+            }
+          }
+          if (baseDB && Array.isArray(baseDB.categories)) {
+            if (!dbInMemory!.categories) dbInMemory!.categories = [];
+            for (const c of baseDB.categories) {
+              if (!dbInMemory!.categories.some((existing: any) => existing.id === c.id || String(existing.id).trim().toLowerCase() === String(c.id).trim().toLowerCase())) {
+                dbInMemory!.categories.push(c);
+              }
+            }
+          }
+        } catch (mergeErr) {
+          console.warn('[Store] Merge base DB_FILE into TMP_DB_FILE warning:', mergeErr);
+        }
+      }
       // Ensure empty arrays for strictly requested empty initialization if missing
       dbInMemory!.warehouses = dbInMemory!.warehouses || [
         { id: 'wh-main', name: 'Main Warehouse', code: 'WH-MAIN', type: 'MAIN', isMain: true, location: 'Central Store', createdAt: new Date().toISOString() },
