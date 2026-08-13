@@ -1,0 +1,13 @@
+{
+  "name": "tsc-print-bridge",
+  "version": "1.0.0",
+  "description": "Local Windows Print Bridge for TSC TTP-244 Pro Barcode Printer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
