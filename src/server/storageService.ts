@@ -50,22 +50,21 @@ export async function uploadProductImage(
     }
   }
 
-  // 4. Storage not configured check in production
-  if (isProd || !blobToken) {
-    throw new Error('IMAGE_STORAGE_NOT_CONFIGURED: Product image storage is not configured. Please configure Vercel Blob (BLOB_READ_WRITE_TOKEN).');
+  // 4. Fallback to local filesystem if blobToken is not configured
+  if (!blobToken) {
+    console.log('[Storage] BLOB_READ_WRITE_TOKEN not configured. Falling back to local filesystem storage.');
+    const uploadsDir = path.join(process.cwd(), 'uploads', 'products');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const ext = normalizedMime.includes('jpeg') || normalizedMime.includes('jpg') ? 'jpg' : normalizedMime.includes('webp') ? 'webp' : 'png';
+    const safeName = `prod_${Date.now()}_${(filename || 'product').replace(/[^a-zA-Z0-9.-]/g, '_')}.${ext}`;
+    const filePath = path.join(uploadsDir, safeName);
+    fs.writeFileSync(filePath, buffer);
+
+    return `/uploads/products/${safeName}`;
   }
-
-  // Development fallback to local filesystem
-  const uploadsDir = path.join(process.cwd(), 'uploads', 'products');
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
-
-  const safeName = `prod_${Date.now()}_${(filename || 'product').replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-  const filePath = path.join(uploadsDir, safeName);
-  fs.writeFileSync(filePath, buffer);
-
-  return `/uploads/products/${safeName}`;
 }
 
 export async function deleteProductImage(imageUrl: string): Promise<void> {

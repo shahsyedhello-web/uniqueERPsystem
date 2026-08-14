@@ -14,21 +14,21 @@ function handleProductError(res: any, err: any, defaultMessage: string) {
   console.error(`[Products Error]:`, err);
 
   if (msg.includes('IMAGE_STORAGE_NOT_CONFIGURED')) {
-    return res.status(503).json({ error: msg });
+    return res.status(503).json({ error: 'IMAGE_STORAGE_NOT_CONFIGURED', message: msg });
   }
   if (msg.includes('IMAGE_UPLOAD_FAILED')) {
-    return res.status(502).json({ error: msg });
+    return res.status(502).json({ error: 'IMAGE_UPLOAD_FAILED', message: msg });
   }
   if (msg.includes('IMAGE_INVALID_TYPE')) {
-    return res.status(400).json({ error: msg });
+    return res.status(400).json({ error: 'IMAGE_INVALID_TYPE', message: msg });
   }
   if (msg.includes('IMAGE_TOO_LARGE')) {
-    return res.status(413).json({ error: msg });
+    return res.status(413).json({ error: 'IMAGE_TOO_LARGE', message: msg });
   }
   if (msg.includes('DATABASE_UNAVAILABLE') || msg.includes("Can't reach database server")) {
-    return res.status(503).json({ error: 'DATABASE_UNAVAILABLE: Database connection is unavailable.' });
+    return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
   }
-  return res.status(500).json({ error: msg || defaultMessage });
+  return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: msg || defaultMessage });
 }
 
 // Helper function to generate EAN-13 barcode
@@ -72,6 +72,12 @@ router.get('/', async (req, res) => {
   try {
     await ensurePrismaInitialized();
     const prisma = getPrisma();
+    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+
+    if (!(prisma && isDbConnected()) && isProd) {
+      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
+    }
+
     if (prisma && isDbConnected()) {
       const products = await prisma.product.findMany({
         where: { deletedAt: null },
@@ -109,7 +115,7 @@ router.get('/', async (req, res) => {
       return res.json(formattedProducts);
     }
 
-    // JSON Store fallback
+    // JSON Store fallback (dev only)
     const db = loadDB();
     db.products = db.products || [];
     db.categories = db.categories || [];
@@ -129,13 +135,7 @@ router.get('/', async (req, res) => {
 
     return res.json(formatted);
   } catch (err: any) {
-    console.error('[Products GET Error]:', err);
-    try {
-      const db = loadDB();
-      return res.json((db.products || []).filter((p) => !p.deletedAt));
-    } catch {
-      return res.status(500).json({ error: 'Failed to fetch products.' });
-    }
+    return handleProductError(res, err, 'Failed to fetch products.');
   }
 });
 
@@ -164,13 +164,19 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
     } = req.body;
 
     if (!name || !name.trim() || !categoryId || salePrice === undefined) {
-      return res.status(400).json({ error: 'Name, Category, and Sale Price are required.' });
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Name, Category, and Sale Price are required.' });
     }
 
     const cleanCatId = String(categoryId).trim();
 
     await ensurePrismaInitialized();
     const prisma = getPrisma();
+    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+
+    if (!(prisma && isDbConnected()) && isProd) {
+      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
+    }
+
     if (prisma && isDbConnected()) {
       // 1. Confirm Category exists in PostgreSQL
       const category = await prisma.category.findUnique({
@@ -179,7 +185,8 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
 
       if (!category) {
         return res.status(400).json({
-          error: 'Selected category does not exist. Please select a valid category from the dropdown.',
+          error: 'CATEGORY_NOT_FOUND',
+          message: 'Selected category does not exist. Please select a valid category from the dropdown.',
         });
       }
 
@@ -199,14 +206,14 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
         where: { sku: { equals: generatedSku, mode: 'insensitive' } },
       });
       if (duplicateSku) {
-        return res.status(400).json({ error: `SKU "${generatedSku}" already exists.` });
+        return res.status(400).json({ error: 'SKU_EXISTS', message: `SKU "${generatedSku}" already exists.` });
       }
 
       const duplicateBarcode = await prisma.product.findFirst({
         where: { barcode: { equals: generatedBarcode, mode: 'insensitive' } },
       });
       if (duplicateBarcode) {
-        return res.status(400).json({ error: `Barcode "${generatedBarcode}" already exists.` });
+        return res.status(400).json({ error: 'BARCODE_EXISTS', message: `Barcode "${generatedBarcode}" already exists.` });
       }
 
       // 5. Upload image if base64 provided
@@ -398,6 +405,12 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
 
     await ensurePrismaInitialized();
     const prisma = getPrisma();
+    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+
+    if (!(prisma && isDbConnected()) && isProd) {
+      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
+    }
+
     if (prisma && isDbConnected()) {
       const existing = await prisma.product.findUnique({
         where: { id },
@@ -405,7 +418,7 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
       });
 
       if (!existing) {
-        return res.status(404).json({ error: 'Product not found.' });
+        return res.status(404).json({ error: 'PRODUCT_NOT_FOUND', message: 'Product does not exist.' });
       }
 
       // Check SKU duplicate if changed
@@ -417,7 +430,7 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
           },
         });
         if (duplicateSku) {
-          return res.status(400).json({ error: `SKU "${req.body.sku}" already exists on another product.` });
+          return res.status(400).json({ error: 'SKU_EXISTS', message: `SKU "${req.body.sku}" already exists on another product.` });
         }
       }
 
@@ -430,7 +443,7 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
           },
         });
         if (duplicateBarcode) {
-          return res.status(400).json({ error: `Barcode "${req.body.barcode}" already exists on another product.` });
+          return res.status(400).json({ error: 'BARCODE_EXISTS', message: `Barcode "${req.body.barcode}" already exists on another product.` });
         }
       }
 
@@ -442,7 +455,8 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
         });
         if (!catCheck) {
           return res.status(400).json({
-            error: 'Selected category does not exist. Please select a valid category from the dropdown.',
+            error: 'CATEGORY_NOT_FOUND',
+            message: 'Selected category does not exist. Please select a valid category from the dropdown.',
           });
         }
         targetCatId = catCheck.id;
@@ -608,10 +622,16 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
 
     await ensurePrismaInitialized();
     const prisma = getPrisma();
+    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+
+    if (!(prisma && isDbConnected()) && isProd) {
+      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
+    }
+
     if (prisma && isDbConnected()) {
       const product = await prisma.product.findUnique({ where: { id } });
       if (!product) {
-        return res.status(404).json({ error: 'Product not found.' });
+        return res.status(404).json({ error: 'PRODUCT_NOT_FOUND', message: 'Product does not exist.' });
       }
 
       if (product.currentStock > 0) {
