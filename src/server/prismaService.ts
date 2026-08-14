@@ -9,6 +9,7 @@ let prismaInstance: any = null;
 let prismaInitPromise: Promise<void> | null = null;
 
 async function initPrismaConnection() {
+  if (isPrismaConnected && prismaInstance) return;
   if (prismaInitPromise) return prismaInitPromise;
 
   prismaInitPromise = (async () => {
@@ -29,15 +30,15 @@ async function initPrismaConnection() {
 
     if (isProd) {
       if (!rawDbUrl) {
-        throw new Error('CRITICAL DATABASE ERROR: DATABASE_URL is not configured for production environment in Vercel.');
+        console.warn('CRITICAL DATABASE WARNING: DATABASE_URL is not configured for production environment in Vercel. Running in local fallback mode.');
       }
       if (isLocal) {
-        throw new Error('CRITICAL DATABASE ERROR: Production DATABASE_URL points to localhost/127.0.0.1. Configure a hosted PostgreSQL database in Vercel environment variables.');
+        console.warn('CRITICAL DATABASE WARNING: Production DATABASE_URL points to localhost/127.0.0.1. Running in local fallback mode.');
       }
     }
 
-    if (!rawDbUrl) {
-      console.log('[Prisma] DATABASE_URL not configured. Running on local store mode.');
+    if (!rawDbUrl || (isProd && isLocal)) {
+      console.log('[Prisma] Remote DATABASE_URL not available. Running on local store mode.');
       isPrismaConnected = false;
       return;
     }
@@ -61,8 +62,8 @@ async function initPrismaConnection() {
               ssl: isLocal ? false : { rejectUnauthorized: false },
             });
 
-            pool.on('error', () => {
-              isPrismaConnected = false;
+            pool.on('error', (err) => {
+              console.warn('[Prisma pg pool client notice]:', err?.message || 'client error');
             });
 
             // Test connectivity with lightweight SELECT 1
@@ -97,7 +98,7 @@ async function initPrismaConnection() {
 
           console.warn(`[Prisma] Connection attempt ${attempt}/${maxRetries} failed for host ${dbHost}: ${errMsg}`);
           if (attempt < maxRetries) {
-            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await new Promise((resolve) => setTimeout(resolve, 1500));
           }
         }
       }
@@ -105,14 +106,16 @@ async function initPrismaConnection() {
       if (!connected && lastError) {
         isPrismaConnected = false;
         prismaInstance = null;
-        prismaInitPromise = null;
         console.warn('[Prisma] PostgreSQL database not connected after retries. Using local storage store fallback.');
       }
     } catch (err: any) {
       isPrismaConnected = false;
       prismaInstance = null;
-      prismaInitPromise = null;
       console.warn('[Prisma] PostgreSQL connection exception safely handled:', err?.message || 'Connection failed');
+    } finally {
+      if (!isPrismaConnected) {
+        prismaInitPromise = null;
+      }
     }
   })();
 

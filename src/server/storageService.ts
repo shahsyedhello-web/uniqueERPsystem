@@ -37,16 +37,32 @@ export async function uploadProductImage(
       const ext = normalizedMime.includes('jpeg') || normalizedMime.includes('jpg') ? 'jpg' : normalizedMime.includes('webp') ? 'webp' : 'png';
       const safeFilename = `products/${Date.now()}-${(filename || 'product').replace(/[^a-zA-Z0-9.-]/g, '_')}.${ext}`;
       
-      const blob = await put(safeFilename, buffer, {
-        access: 'public',
-        contentType: normalizedMime,
-        token: blobToken,
-      });
-      console.log('[Storage] Uploaded image to Vercel Blob successfully:', blob.url);
-      return blob.url;
+      let blobResult;
+      try {
+        blobResult = await put(safeFilename, buffer, {
+          access: 'public',
+          contentType: normalizedMime,
+          token: blobToken,
+        });
+      } catch (firstErr: any) {
+        const errMsg = String(firstErr?.message || '');
+        if (errMsg.includes('private store') || errMsg.includes('private access') || errMsg.includes('access')) {
+          console.log('[Storage] Store requires private access. Retrying put with access: private...');
+          blobResult = await put(safeFilename, buffer, {
+            access: 'private' as any,
+            contentType: normalizedMime,
+            token: blobToken,
+          });
+        } else {
+          throw firstErr;
+        }
+      }
+
+      console.log('[Storage] Uploaded image to Vercel Blob successfully:', blobResult.url);
+      return blobResult.url;
     } catch (err: any) {
       console.error('[Storage] Vercel Blob upload failed:', err);
-      throw new Error(`IMAGE_UPLOAD_FAILED: Failed to upload image to Vercel Blob storage: ${err?.message || 'unknown error'}`);
+      throw new Error(`IMAGE_UPLOAD_FAILED: ${err?.message || 'Failed to upload image to Vercel Blob storage.'}`);
     }
   }
 
