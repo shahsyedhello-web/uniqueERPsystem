@@ -44,73 +44,6 @@ function createEan13(): string {
   return `${base12}${checkDigit}`;
 }
 
-// Resilient category resolver for Prisma
-async function resolvePrismaCategory(prisma: any, catIdentifier: string): Promise<any | null> {
-  if (!catIdentifier) return null;
-  const clean = String(catIdentifier).trim();
-
-  // 1. Check direct UUID/ID match
-  let cat = await prisma.category.findUnique({
-    where: { id: clean },
-  });
-  if (cat && !cat.deletedAt) return cat;
-
-  // 2. Check name or code match (case-insensitive)
-  cat = await prisma.category.findFirst({
-    where: {
-      OR: [
-        { name: { equals: clean, mode: 'insensitive' } },
-        { code: { equals: clean, mode: 'insensitive' } },
-      ],
-      deletedAt: null,
-    },
-  });
-  if (cat) return cat;
-
-  // 3. Auto-create category if valid name given
-  try {
-    const count = await prisma.category.count();
-    const autoCode = 'CAT-' + (count + 1).toString().padStart(3, '0');
-    cat = await prisma.category.create({
-      data: {
-        name: clean,
-        code: autoCode,
-        status: 'ACTIVE',
-      },
-    });
-    return cat;
-  } catch (createErr) {
-    console.warn('[Products] Category auto-create fallback failed:', createErr);
-    return null;
-  }
-}
-
-// Resilient category resolver for in-memory fallback
-function resolveFallbackCategory(db: any, catIdentifier: string): any | null {
-  if (!catIdentifier) return null;
-  const clean = String(catIdentifier).trim().toLowerCase();
-  db.categories = db.categories || [];
-
-  let cat = db.categories.find(
-    (c: any) => !c.deletedAt && (c.id.toLowerCase() === clean || c.name.toLowerCase() === clean || (c.code && c.code.toLowerCase() === clean))
-  );
-  if (cat) return cat;
-
-  // Auto-create category in in-memory store
-  const autoCode = 'CAT-' + (db.categories.length + 1).toString().padStart(3, '0');
-  const newCat = {
-    id: generateUUID(),
-    name: String(catIdentifier).trim(),
-    code: autoCode,
-    status: 'ACTIVE',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  db.categories.unshift(newCat);
-  saveDB();
-  return newCat;
-}
-
 // Product Image Upload Route
 router.post('/upload-image', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: AuthRequest, res) => {
   try {
@@ -235,8 +168,10 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
     const prisma = getPrisma();
 
     if (prisma && isDbConnected()) {
-      // 1. Confirm or Resolve Category in PostgreSQL
-      const category = await resolvePrismaCategory(prisma, cleanCatId);
+      // 1. Confirm Category exists in PostgreSQL
+      const category = await prisma.category.findUnique({
+        where: { id: cleanCatId },
+      });
 
       if (!category) {
         return res.status(400).json({
@@ -361,7 +296,7 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
     db.suppliers = db.suppliers || [];
     db.inventoryLogs = db.inventoryLogs || [];
 
-    const category = resolveFallbackCategory(db, cleanCatId);
+    const category = db.categories.find((c) => c.id === cleanCatId);
     if (!category) {
       return res.status(400).json({ error: 'Selected category does not exist.' });
     }
@@ -500,7 +435,9 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
       // Category validation if provided
       let targetCatId = existing.categoryId;
       if (req.body.categoryId && String(req.body.categoryId).trim() !== existing.categoryId) {
-        const catCheck = await resolvePrismaCategory(prisma, String(req.body.categoryId).trim());
+        const catCheck = await prisma.category.findUnique({
+          where: { id: String(req.body.categoryId).trim() },
+        });
         if (!catCheck) {
           return res.status(400).json({
             error: 'CATEGORY_NOT_FOUND',
@@ -607,7 +544,7 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
     let targetCatId = existing.categoryId;
     let targetCatName = existing.categoryName;
     if (req.body.categoryId && String(req.body.categoryId).trim() !== existing.categoryId) {
-      const catCheck = resolveFallbackCategory(db, String(req.body.categoryId).trim());
+      const catCheck = db.categories.find((c) => c.id === String(req.body.categoryId).trim());
       if (!catCheck) {
         return res.status(400).json({ error: 'Selected category does not exist.' });
       }
