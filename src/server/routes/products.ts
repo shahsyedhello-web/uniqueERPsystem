@@ -72,11 +72,6 @@ router.get('/', async (req, res) => {
   try {
     await ensurePrismaInitialized();
     const prisma = getPrisma();
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-
-    if (!(prisma && isDbConnected()) && isProd) {
-      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
-    }
 
     if (prisma && isDbConnected()) {
       const products = await prisma.product.findMany({
@@ -171,11 +166,6 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
 
     await ensurePrismaInitialized();
     const prisma = getPrisma();
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-
-    if (!(prisma && isDbConnected()) && isProd) {
-      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
-    }
 
     if (prisma && isDbConnected()) {
       // 1. Confirm Category exists in PostgreSQL
@@ -405,11 +395,6 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
 
     await ensurePrismaInitialized();
     const prisma = getPrisma();
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-
-    if (!(prisma && isDbConnected()) && isProd) {
-      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
-    }
 
     if (prisma && isDbConnected()) {
       const existing = await prisma.product.findUnique({
@@ -622,11 +607,6 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
 
     await ensurePrismaInitialized();
     const prisma = getPrisma();
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-
-    if (!(prisma && isDbConnected()) && isProd) {
-      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
-    }
 
     if (prisma && isDbConnected()) {
       const product = await prisma.product.findUnique({ where: { id } });

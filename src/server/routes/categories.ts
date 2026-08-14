@@ -22,7 +22,6 @@ router.get('/', async (req, res) => {
   try {
     await ensurePrismaInitialized();
     const prisma = getPrisma();
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
 
     if (prisma && isDbConnected()) {
       const categories = await prisma.category.findMany({
@@ -30,10 +29,6 @@ router.get('/', async (req, res) => {
         orderBy: { createdAt: 'desc' },
       });
       return res.json(categories);
-    }
-
-    if (isProd) {
-      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
     }
 
     const db = loadDB();
@@ -59,11 +54,6 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
 
     await ensurePrismaInitialized();
     const prisma = getPrisma();
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-
-    if (!(prisma && isDbConnected()) && isProd) {
-      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
-    }
 
     if (prisma && isDbConnected()) {
       // Check duplicate category name
@@ -148,11 +138,6 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
 
     await ensurePrismaInitialized();
     const prisma = getPrisma();
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-
-    if (!(prisma && isDbConnected()) && isProd) {
-      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
-    }
 
     if (prisma && isDbConnected()) {
       const existing = await prisma.category.findUnique({ where: { id } });
@@ -256,11 +241,6 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
 
     await ensurePrismaInitialized();
     const prisma = getPrisma();
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-
-    if (!(prisma && isDbConnected()) && isProd) {
-      return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'Production database is unavailable.' });
-    }
 
     if (prisma && isDbConnected()) {
       const category = await prisma.category.findUnique({ where: { id } });
