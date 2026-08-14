@@ -317,16 +317,7 @@ export function loadDB(forceReload = false): DBData {
         { id: 'unit-tray', name: 'Tray', code: 'TRAY', symbol: 'tray', description: 'Bakery tray unit', createdAt: new Date().toISOString() },
       ];
       dbInMemory!.products = dbInMemory!.products || [];
-      if (!dbInMemory!.categories || dbInMemory!.categories.length === 0) {
-        dbInMemory!.categories = [
-          { id: 'cat-1', name: 'Cakes', code: 'CAT-001', description: 'Fresh bakery cakes', status: 'ACTIVE', createdAt: new Date().toISOString() },
-          { id: 'cat-2', name: 'Sweets', code: 'CAT-002', description: 'Traditional oriental sweets & mithai', status: 'ACTIVE', createdAt: new Date().toISOString() },
-          { id: 'cat-3', name: 'Bakery', code: 'CAT-003', description: 'Breads, buns, and rusks', status: 'ACTIVE', createdAt: new Date().toISOString() },
-          { id: 'cat-4', name: 'Beverages', code: 'CAT-004', description: 'Cold drinks, juices & tea', status: 'ACTIVE', createdAt: new Date().toISOString() },
-          { id: 'cat-5', name: 'Savories', code: 'CAT-005', description: 'Patties, samosas, and snacks', status: 'ACTIVE', createdAt: new Date().toISOString() },
-          { id: 'cat-6', name: 'Biscuits', code: 'CAT-006', description: 'Bakery cookies & biscuits', status: 'ACTIVE', createdAt: new Date().toISOString() },
-        ];
-      }
+      dbInMemory!.categories = dbInMemory!.categories || [];
       dbInMemory!.inventoryLogs = dbInMemory!.inventoryLogs || [];
       dbInMemory!.adjustments = dbInMemory!.adjustments || [];
       dbInMemory!.transfers = dbInMemory!.transfers || [];
