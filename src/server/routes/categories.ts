@@ -18,6 +18,7 @@ function handleCategoryError(res: any, err: any, defaultMessage: string) {
   return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: msg || defaultMessage });
 }
 
+// GET all categories
 router.get('/', async (req, res) => {
   try {
     await ensurePrismaInitialized();
@@ -43,6 +44,45 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET single category by ID
+router.get('/:id', async (req, res) => {
+  try {
+    const rawId = req.params.id;
+    const id = String(rawId || '').trim();
+
+    if (!id) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Category ID is required.' });
+    }
+
+    await ensurePrismaInitialized();
+    const prisma = getPrisma();
+
+    if (prisma && isDbConnected()) {
+      const category = await prisma.category.findUnique({
+        where: { id },
+      });
+
+      if (!category || category.deletedAt) {
+        return res.status(404).json({ error: 'CATEGORY_NOT_FOUND', message: 'Category does not exist.' });
+      }
+
+      return res.json(category);
+    }
+
+    const db = loadDB();
+    db.categories = db.categories || [];
+    const category = db.categories.find((c: any) => c.id === id && !c.deletedAt);
+    if (!category) {
+      return res.status(404).json({ error: 'CATEGORY_NOT_FOUND', message: 'Category does not exist.' });
+    }
+
+    return res.json(category);
+  } catch (err: any) {
+    return handleCategoryError(res, err, 'Failed to fetch category.');
+  }
+});
+
+// CREATE Category
 router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: AuthRequest, res) => {
   try {
     const { name, code, description } = req.body;
@@ -56,7 +96,7 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
     const prisma = getPrisma();
 
     if (prisma && isDbConnected()) {
-      // Check duplicate category name
+      // Check duplicate category name in PostgreSQL
       const existingName = await prisma.category.findFirst({
         where: { name: { equals: trimmedName, mode: 'insensitive' }, deletedAt: null },
       });
@@ -64,7 +104,7 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
         return res.status(400).json({ error: 'CATEGORY_NAME_EXISTS', message: `A category with name "${trimmedName}" already exists.` });
       }
 
-      // Auto-generate code if missing
+      // Generate unique code if missing
       let catCode = code ? code.trim().toUpperCase() : '';
       if (!catCode) {
         const count = await prisma.category.count();
@@ -90,7 +130,7 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
       return res.status(201).json(newCategory);
     }
 
-    // JSON Store fallback (dev only)
+    // JSON Store fallback (dev offline only)
     const db = loadDB();
     db.categories = db.categories || [];
 
@@ -130,18 +170,23 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
   }
 });
 
+// UPDATE Category
 router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: AuthRequest, res) => {
   try {
     const rawId = req.params.id;
     const id = String(rawId || '').trim();
     const { name, code, description, status } = req.body;
 
+    if (!id) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Category ID is required.' });
+    }
+
     await ensurePrismaInitialized();
     const prisma = getPrisma();
 
     if (prisma && isDbConnected()) {
       const existing = await prisma.category.findUnique({ where: { id } });
-      if (!existing) {
+      if (!existing || existing.deletedAt) {
         return res.status(404).json({ error: 'CATEGORY_NOT_FOUND', message: 'Category does not exist.' });
       }
 
@@ -185,7 +230,7 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
       return res.json(updated);
     }
 
-    // JSON Store fallback (dev only)
+    // JSON Store fallback (dev offline only)
     const db = loadDB();
     db.categories = db.categories || [];
     const index = db.categories.findIndex((c) => c.id === id);
@@ -233,11 +278,16 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
   }
 });
 
+// DELETE Category
 router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: AuthRequest, res) => {
   try {
     const rawId = req.params.id;
     const id = String(rawId || '').trim();
     const { reassignToCategoryId } = req.body || {};
+
+    if (!id) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Category ID is required.' });
+    }
 
     await ensurePrismaInitialized();
     const prisma = getPrisma();
@@ -251,28 +301,32 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
         });
       }
 
+      // Check whether ANY products in PostgreSQL reference this category (foreign key check)
       const assignedProductsCount = await prisma.product.count({
-        where: { categoryId: id, deletedAt: null },
+        where: { categoryId: id },
       });
 
       if (assignedProductsCount > 0) {
         if (reassignToCategoryId) {
-          const targetCategory = await prisma.category.findUnique({ where: { id: reassignToCategoryId } });
+          const cleanTargetId = String(reassignToCategoryId).trim();
+          const targetCategory = await prisma.category.findUnique({ where: { id: cleanTargetId } });
           if (!targetCategory || targetCategory.id === id) {
             return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Selected replacement category was not found.' });
           }
 
+          // Reassign all products to the replacement category
           await prisma.product.updateMany({
             where: { categoryId: id },
             data: { categoryId: targetCategory.id },
           });
         } else {
-          return res.status(400).json({
-            error: 'CATEGORY_HAS_PRODUCTS',
+          // Return clear 409 CATEGORY_IN_USE without deleting anything
+          return res.status(409).json({
+            error: 'CATEGORY_IN_USE',
             hasLinkedProducts: true,
             productCount: assignedProductsCount,
             categoryName: category.name,
-            message: `Category "${category.name}" contains ${assignedProductsCount} active product(s). Please select another category to move these products to, or cancel.`,
+            message: `Cannot delete category because ${assignedProductsCount} product(s) are assigned to it. Please reassign products to another category first.`,
           });
         }
       }
@@ -282,7 +336,7 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
       return res.json({ message: `Category "${category.name}" deleted successfully.` });
     }
 
-    // JSON Store fallback (dev only)
+    // JSON Store fallback (dev offline only)
     const db = loadDB();
     db.categories = db.categories || [];
     db.products = db.products || [];
@@ -296,7 +350,8 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
 
     if (assignedProducts.length > 0) {
       if (reassignToCategoryId) {
-        const targetCat = db.categories.find((c) => c.id === reassignToCategoryId);
+        const cleanTargetId = String(reassignToCategoryId).trim();
+        const targetCat = db.categories.find((c) => c.id === cleanTargetId);
         if (!targetCat || targetCat.id === id) {
           return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Selected replacement category was not found.' });
         }
@@ -307,12 +362,12 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
           }
         });
       } else {
-        return res.status(400).json({
-          error: 'CATEGORY_HAS_PRODUCTS',
+        return res.status(409).json({
+          error: 'CATEGORY_IN_USE',
           hasLinkedProducts: true,
           productCount: assignedProducts.length,
           categoryName: category.name,
-          message: `Category "${category.name}" contains ${assignedProducts.length} active product(s). Please select another category to move these products to, or cancel.`,
+          message: `Cannot delete category because ${assignedProducts.length} product(s) are assigned to it. Please reassign products to another category first.`,
         });
       }
     }

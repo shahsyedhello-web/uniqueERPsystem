@@ -6,6 +6,7 @@ import { BarcodeImage } from '../common/BarcodeImage';
 import { BarcodePrintModal } from '../common/BarcodePrintModal';
 import { CameraBarcodeScannerModal } from '../common/CameraBarcodeScannerModal';
 import { generateEAN13Barcode, generateSKU } from '../../utils/barcode';
+import { ProductImage } from '../common/ProductImage';
 
 export const ProductsView: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -306,17 +307,11 @@ export const ProductsView: React.FC = () => {
                 <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                   <td className="p-3.5">
                     <div className="flex items-center space-x-3">
-                      {p.image ? (
-                        <img
-                          src={p.image}
-                          alt={p.name}
-                          className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0 bg-slate-50"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center shrink-0 text-slate-400">
-                          <ImageIcon className="w-5 h-5" />
-                        </div>
-                      )}
+                      <ProductImage
+                        src={p.image}
+                        alt={p.name}
+                        className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0 bg-slate-50"
+                      />
                       <div>
                         <div className="font-bold text-slate-800">{p.name}</div>
                         <div className="text-[10px] text-slate-400 font-mono">{p.sku} &bull; {p.unit}</div>

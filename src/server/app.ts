@@ -23,6 +23,7 @@ import branchRoutes from './routes/branches';
 import departmentRoutes from './routes/departments';
 import financeRoutes from './routes/finance';
 import hardwareRoutes from './routes/hardware';
+import storageRoutes from './routes/storage';
 import { loadDB } from './store';
 
 export const app = express();
@@ -133,6 +134,7 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/hardware', hardwareRoutes);
+app.use('/api/storage', storageRoutes);
 
 // Catch-all for unmatched /api routes
 app.all('/api/*', (req, res) => {

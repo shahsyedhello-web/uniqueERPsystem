@@ -49,12 +49,12 @@ router.post('/upload-image', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), asy
   try {
     const { imageBase64, filename } = req.body;
     if (!imageBase64 || typeof imageBase64 !== 'string') {
-      return res.status(400).json({ error: 'Valid imageBase64 string is required.' });
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Valid imageBase64 string is required.' });
     }
 
     const matches = imageBase64.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
     if (!matches || matches.length !== 3) {
-      return res.status(400).json({ error: 'Invalid base64 image format. Supported formats: PNG, JPG, JPEG, WEBP.' });
+      return res.status(400).json({ error: 'IMAGE_INVALID_TYPE', message: 'Invalid base64 image format. Supported formats: PNG, JPG, JPEG, WEBP.' });
     }
 
     const ext = matches[1].toLowerCase() === 'jpeg' ? 'jpg' : matches[1].toLowerCase();
@@ -110,7 +110,7 @@ router.get('/', async (req, res) => {
       return res.json(formattedProducts);
     }
 
-    // JSON Store fallback (dev only)
+    // JSON Store fallback (dev offline only)
     const db = loadDB();
     db.products = db.products || [];
     db.categories = db.categories || [];
@@ -131,6 +131,80 @@ router.get('/', async (req, res) => {
     return res.json(formatted);
   } catch (err: any) {
     return handleProductError(res, err, 'Failed to fetch products.');
+  }
+});
+
+// GET single product by ID
+router.get('/:id', async (req, res) => {
+  try {
+    const rawId = req.params.id;
+    const id = String(rawId || '').trim();
+
+    if (!id) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Product ID is required.' });
+    }
+
+    await ensurePrismaInitialized();
+    const prisma = getPrisma();
+
+    if (prisma && isDbConnected()) {
+      const p = await prisma.product.findUnique({
+        where: { id },
+        include: { category: true, supplier: true, variants: true },
+      });
+
+      if (!p || p.deletedAt) {
+        return res.status(404).json({ error: 'PRODUCT_NOT_FOUND', message: 'Product does not exist.' });
+      }
+
+      return res.json({
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        barcode: p.barcode,
+        categoryId: p.categoryId,
+        categoryName: p.category ? p.category.name : 'Uncategorized',
+        unit: p.unit,
+        purchasePrice: p.purchasePrice,
+        salePrice: p.salePrice,
+        wholesalePrice: p.wholesalePrice,
+        costPrice: p.costPrice,
+        minStock: p.minStock,
+        currentStock: p.currentStock,
+        description: p.description,
+        image: p.image,
+        expiryDays: p.expiryDays,
+        status: p.status,
+        supplierId: p.supplierId,
+        supplierName: p.supplier ? p.supplier.name : null,
+        taxRate: p.taxRate,
+        isKitchenItem: p.isKitchenItem,
+        variants: p.variants || [],
+        createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
+        updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString(),
+      });
+    }
+
+    const db = loadDB();
+    db.products = db.products || [];
+    db.categories = db.categories || [];
+    db.suppliers = db.suppliers || [];
+
+    const p = db.products.find((prod) => prod.id === id && !prod.deletedAt);
+    if (!p) {
+      return res.status(404).json({ error: 'PRODUCT_NOT_FOUND', message: 'Product does not exist.' });
+    }
+
+    const cat = db.categories.find((c) => c.id === p.categoryId);
+    const supp = db.suppliers.find((s) => s.id === p.supplierId);
+
+    return res.json({
+      ...p,
+      categoryName: p.categoryName || (cat ? cat.name : 'Uncategorized'),
+      supplierName: p.supplierName || (supp ? supp.name : null),
+    });
+  } catch (err: any) {
+    return handleProductError(res, err, 'Failed to fetch product.');
   }
 });
 
@@ -168,12 +242,12 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
     const prisma = getPrisma();
 
     if (prisma && isDbConnected()) {
-      // 1. Confirm Category exists in PostgreSQL
+      // 1. Strict Category verification in PostgreSQL (NO auto-create)
       const category = await prisma.category.findUnique({
         where: { id: cleanCatId },
       });
 
-      if (!category) {
+      if (!category || category.deletedAt) {
         return res.status(400).json({
           error: 'CATEGORY_NOT_FOUND',
           message: 'Selected category does not exist. Please select a valid category from the dropdown.',
@@ -289,16 +363,16 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
       });
     }
 
-    // JSON Store fallback
+    // JSON Store fallback (dev offline only)
     const db = loadDB();
     db.products = db.products || [];
     db.categories = db.categories || [];
     db.suppliers = db.suppliers || [];
     db.inventoryLogs = db.inventoryLogs || [];
 
-    const category = db.categories.find((c) => c.id === cleanCatId);
+    const category = db.categories.find((c: any) => c.id === cleanCatId && !c.deletedAt);
     if (!category) {
-      return res.status(400).json({ error: 'Selected category does not exist.' });
+      return res.status(400).json({ error: 'CATEGORY_NOT_FOUND', message: 'Selected category does not exist.' });
     }
 
     let cleanSuppId: string | undefined = undefined;
@@ -316,12 +390,12 @@ router.post('/', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Aut
 
     const dupSku = db.products.find((p) => !p.deletedAt && p.sku.toLowerCase() === generatedSku.toLowerCase());
     if (dupSku) {
-      return res.status(400).json({ error: `SKU "${generatedSku}" already exists.` });
+      return res.status(400).json({ error: 'SKU_EXISTS', message: `SKU "${generatedSku}" already exists.` });
     }
 
     const dupBarcode = db.products.find((p) => !p.deletedAt && p.barcode.toLowerCase() === generatedBarcode.toLowerCase());
     if (dupBarcode) {
-      return res.status(400).json({ error: `Barcode "${generatedBarcode}" already exists.` });
+      return res.status(400).json({ error: 'BARCODE_EXISTS', message: `Barcode "${generatedBarcode}" already exists.` });
     }
 
     let finalImageUrl: string | undefined = undefined;
@@ -393,6 +467,10 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
     const rawId = req.params.id;
     const id = String(rawId || '').trim();
 
+    if (!id) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Product ID is required.' });
+    }
+
     await ensurePrismaInitialized();
     const prisma = getPrisma();
 
@@ -402,7 +480,7 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
         include: { category: true },
       });
 
-      if (!existing) {
+      if (!existing || existing.deletedAt) {
         return res.status(404).json({ error: 'PRODUCT_NOT_FOUND', message: 'Product does not exist.' });
       }
 
@@ -432,13 +510,13 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
         }
       }
 
-      // Category validation if provided
+      // Strict Category verification if provided (NO auto-create)
       let targetCatId = existing.categoryId;
       if (req.body.categoryId && String(req.body.categoryId).trim() !== existing.categoryId) {
         const catCheck = await prisma.category.findUnique({
           where: { id: String(req.body.categoryId).trim() },
         });
-        if (!catCheck) {
+        if (!catCheck || catCheck.deletedAt) {
           return res.status(400).json({
             error: 'CATEGORY_NOT_FOUND',
             message: 'Selected category does not exist. Please select a valid category from the dropdown.',
@@ -447,7 +525,7 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
         targetCatId = catCheck.id;
       }
 
-      // Image handling rules
+      // Image handling
       let finalImageUrl = existing.image;
       if (req.body.image !== undefined) {
         if (req.body.image === null || req.body.image === '') {
@@ -514,7 +592,7 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
       });
     }
 
-    // JSON Store fallback
+    // JSON Store fallback (dev offline only)
     const db = loadDB();
     db.products = db.products || [];
     db.categories = db.categories || [];
@@ -522,7 +600,7 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
 
     const index = db.products.findIndex((p) => p.id === id);
     if (index === -1) {
-      return res.status(404).json({ error: 'Product not found.' });
+      return res.status(404).json({ error: 'PRODUCT_NOT_FOUND', message: 'Product does not exist.' });
     }
 
     const existing = db.products[index];
@@ -530,23 +608,23 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: A
     if (req.body.sku && req.body.sku.trim().toLowerCase() !== existing.sku.toLowerCase()) {
       const dupSku = db.products.find((p) => p.id !== id && !p.deletedAt && p.sku.toLowerCase() === req.body.sku.trim().toLowerCase());
       if (dupSku) {
-        return res.status(400).json({ error: `SKU "${req.body.sku}" already exists on another product.` });
+        return res.status(400).json({ error: 'SKU_EXISTS', message: `SKU "${req.body.sku}" already exists on another product.` });
       }
     }
 
     if (req.body.barcode && req.body.barcode.trim().toLowerCase() !== (existing.barcode || '').toLowerCase()) {
       const dupBarcode = db.products.find((p) => p.id !== id && !p.deletedAt && p.barcode.toLowerCase() === req.body.barcode.trim().toLowerCase());
       if (dupBarcode) {
-        return res.status(400).json({ error: `Barcode "${req.body.barcode}" already exists on another product.` });
+        return res.status(400).json({ error: 'BARCODE_EXISTS', message: `Barcode "${req.body.barcode}" already exists on another product.` });
       }
     }
 
     let targetCatId = existing.categoryId;
     let targetCatName = existing.categoryName;
     if (req.body.categoryId && String(req.body.categoryId).trim() !== existing.categoryId) {
-      const catCheck = db.categories.find((c) => c.id === String(req.body.categoryId).trim());
+      const catCheck = db.categories.find((c: any) => c.id === String(req.body.categoryId).trim() && !c.deletedAt);
       if (!catCheck) {
-        return res.status(400).json({ error: 'Selected category does not exist.' });
+        return res.status(400).json({ error: 'CATEGORY_NOT_FOUND', message: 'Selected category does not exist.' });
       }
       targetCatId = catCheck.id;
       targetCatName = catCheck.name;
@@ -605,18 +683,23 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
     const rawId = req.params.id;
     const id = String(rawId || '').trim();
 
+    if (!id) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Product ID is required.' });
+    }
+
     await ensurePrismaInitialized();
     const prisma = getPrisma();
 
     if (prisma && isDbConnected()) {
       const product = await prisma.product.findUnique({ where: { id } });
-      if (!product) {
+      if (!product || product.deletedAt) {
         return res.status(404).json({ error: 'PRODUCT_NOT_FOUND', message: 'Product does not exist.' });
       }
 
       if (product.currentStock > 0) {
         return res.status(400).json({
-          error: `Cannot delete product "${product.name}". It currently has ${product.currentStock} ${product.unit} in stock. Please adjust or clear stock to 0 before deleting.`,
+          error: 'STOCK_NON_ZERO',
+          message: `Cannot delete product "${product.name}". It currently has ${product.currentStock} ${product.unit} in stock. Please adjust or clear stock to 0 before deleting.`,
         });
       }
 
@@ -624,7 +707,8 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
       const hasSales = await prisma.saleItem.findFirst({ where: { productId: id } });
       if (hasSales) {
         return res.status(400).json({
-          error: `Cannot delete product "${product.name}". It is referenced in existing sales transaction history. You can edit its status to "INACTIVE" to archive it instead.`,
+          error: 'PRODUCT_IN_USE_SALES',
+          message: `Cannot delete product "${product.name}". It is referenced in existing sales transaction history. You can edit its status to "INACTIVE" to archive it instead.`,
         });
       }
 
@@ -632,7 +716,8 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
       const hasPurchases = await prisma.purchaseItem.findFirst({ where: { productId: id } });
       if (hasPurchases) {
         return res.status(400).json({
-          error: `Cannot delete product "${product.name}". It is referenced in supplier purchase orders. You can edit its status to "INACTIVE" to archive it instead.`,
+          error: 'PRODUCT_IN_USE_PURCHASES',
+          message: `Cannot delete product "${product.name}". It is referenced in supplier purchase orders. You can edit its status to "INACTIVE" to archive it instead.`,
         });
       }
 
@@ -641,17 +726,19 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
       const hasRecipeIng = await prisma.recipeIngredient.findFirst({ where: { rawMaterialId: id } });
       if (hasRecipeProd || hasRecipeIng) {
         return res.status(400).json({
-          error: `Cannot delete product "${product.name}". It is linked to production recipes. Set status to "INACTIVE" to archive it instead.`,
+          error: 'PRODUCT_IN_USE_RECIPE',
+          message: `Cannot delete product "${product.name}". It is linked to production recipes. Set status to "INACTIVE" to archive it instead.`,
         });
       }
 
-      // Check inventory logs
+      // Check inventory movements
       const hasLogs = await prisma.inventoryLog.findFirst({
         where: { productId: id, type: { not: 'STOCK_IN' } },
       });
       if (hasLogs) {
         return res.status(400).json({
-          error: `Cannot delete product "${product.name}". It has recorded inventory movements. Set its status to "INACTIVE" to archive it instead.`,
+          error: 'PRODUCT_IN_USE_LOGS',
+          message: `Cannot delete product "${product.name}". It has recorded inventory movements. Set its status to "INACTIVE" to archive it instead.`,
         });
       }
 
@@ -665,18 +752,19 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
       return res.json({ message: `Product "${product.name}" deleted successfully.` });
     }
 
-    // JSON Store fallback
+    // JSON Store fallback (dev offline only)
     const db = loadDB();
     db.products = db.products || [];
 
     const product = db.products.find((p) => p.id === id);
     if (!product) {
-      return res.status(404).json({ error: 'Product not found.' });
+      return res.status(404).json({ error: 'PRODUCT_NOT_FOUND', message: 'Product does not exist.' });
     }
 
     if (product.currentStock > 0) {
       return res.status(400).json({
-        error: `Cannot delete product "${product.name}". It currently has ${product.currentStock} ${product.unit} in stock. Please adjust or clear stock to 0 before deleting.`,
+        error: 'STOCK_NON_ZERO',
+        message: `Cannot delete product "${product.name}". It currently has ${product.currentStock} ${product.unit} in stock. Please adjust or clear stock to 0 before deleting.`,
       });
     }
 
@@ -689,8 +777,7 @@ router.delete('/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req
 
     return res.json({ message: `Product "${product.name}" deleted successfully.` });
   } catch (err: any) {
-    console.error('[Products DELETE Error]:', err);
-    return res.status(500).json({ error: err?.message || 'Failed to delete product.' });
+    return handleProductError(res, err, 'Failed to delete product.');
   }
 });
 

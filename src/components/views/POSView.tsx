@@ -28,6 +28,7 @@ import {
 import { playBarcodeBeep } from '../../utils/barcode';
 import { ProductNotFoundModal } from '../common/ProductNotFoundModal';
 import { CameraBarcodeScannerModal } from '../common/CameraBarcodeScannerModal';
+import { ProductImage } from '../common/ProductImage';
 
 export const POSView: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -779,7 +780,11 @@ export const POSView: React.FC = () => {
               <div className="space-y-1.5">
                 {p.image ? (
                   <div className="w-full h-24 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 mb-1">
-                    <img src={p.image} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                    <ProductImage
+                      src={p.image}
+                      alt={p.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    />
                   </div>
                 ) : null}
 
