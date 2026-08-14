@@ -13,6 +13,9 @@ function handleProductError(res: any, err: any, defaultMessage: string) {
   const msg = err?.message || String(err || '');
   console.error(`[Products Error]:`, err);
 
+  if (msg.includes('IMAGE_STORE_PRIVATE')) {
+    return res.status(400).json({ error: 'IMAGE_STORE_PRIVATE', message: msg });
+  }
   if (msg.includes('IMAGE_STORAGE_NOT_CONFIGURED')) {
     return res.status(503).json({ error: 'IMAGE_STORAGE_NOT_CONFIGURED', message: msg });
   }

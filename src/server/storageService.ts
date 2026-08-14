@@ -1,8 +1,6 @@
 import { put, del } from '@vercel/blob';
 import path from 'path';
 import fs from 'fs';
-import http from 'http';
-import https from 'https';
 
 export async function uploadProductImage(
   fileBuffer: Buffer | string,
@@ -32,44 +30,43 @@ export async function uploadProductImage(
     throw new Error('IMAGE_TOO_LARGE: Selected image exceeds maximum 5MB size limit.');
   }
 
-  // 3. Vercel Blob Upload
+  // 3. Determine sanitized file extension and base name (preventing duplicate .png.png)
+  const ext = normalizedMime.includes('jpeg') || normalizedMime.includes('jpg')
+    ? 'jpg'
+    : normalizedMime.includes('webp')
+    ? 'webp'
+    : 'png';
+  
+  const rawBaseName = path.parse(filename || 'product').name;
+  const cleanBase = rawBaseName.replace(/[^a-zA-Z0-9_-]/g, '_') || 'product';
+  const safeFilename = `products/${Date.now()}-${cleanBase}.${ext}`;
+
+  // 4. Vercel Blob Upload with strict 'public' access
   if (blobToken) {
     try {
-      const ext = normalizedMime.includes('jpeg') || normalizedMime.includes('jpg') ? 'jpg' : normalizedMime.includes('webp') ? 'webp' : 'png';
-      const cleanBase = (filename || 'product').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const safeFilename = `products/${Date.now()}-${cleanBase}.${ext}`;
+      console.log(`[Storage] Uploading to Vercel Blob with public access: ${safeFilename}`);
+      const blobResult = await put(safeFilename, buffer, {
+        access: 'public',
+        contentType: normalizedMime,
+        token: blobToken,
+      });
 
-      let blobResult;
-      try {
-        blobResult = await put(safeFilename, buffer, {
-          access: 'public',
-          contentType: normalizedMime,
-          token: blobToken,
-        });
-      } catch (firstErr: any) {
-        const errMsg = String(firstErr?.message || '');
-        if (errMsg.includes('private store') || errMsg.includes('private access') || errMsg.includes('access')) {
-          console.log('[Storage] Vercel store requires private access parameter. Uploading with private access...');
-          blobResult = await put(safeFilename, buffer, {
-            access: 'private' as any,
-            contentType: normalizedMime,
-            token: blobToken,
-          });
-        } else {
-          throw firstErr;
-        }
-      }
-
-      console.log('[Storage] Uploaded image to Vercel Blob successfully:', blobResult.url);
+      console.log('[Storage] Vercel Blob public upload successful:', blobResult.url);
       return blobResult.url;
     } catch (err: any) {
-      console.error('[Storage] Vercel Blob upload failed:', err);
-      throw new Error(`IMAGE_UPLOAD_FAILED: ${err?.message || 'Failed to upload image to Vercel Blob storage.'}`);
+      console.error('[Storage] Vercel Blob upload error:', err);
+      const errMsg = err?.message || String(err || '');
+      if (errMsg.includes('private store') || errMsg.includes('private access') || errMsg.includes('store is private')) {
+        throw new Error(
+          'IMAGE_STORE_PRIVATE: Your Vercel Blob Store is configured as "Private". Product images require browser-public access. In your Vercel Dashboard -> Storage -> Blob Store Settings, ensure Public Access is enabled or link a Public Blob store.'
+        );
+      }
+      throw new Error(`IMAGE_UPLOAD_FAILED: ${errMsg}`);
     }
   }
 
-  // 4. Fallback to local filesystem if blobToken is not configured (e.g. local offline dev)
-  console.log('[Storage] BLOB_READ_WRITE_TOKEN not configured. Using local filesystem storage.');
+  // 5. Fallback for local offline development only (when BLOB_READ_WRITE_TOKEN is not present)
+  console.log('[Storage] BLOB_READ_WRITE_TOKEN not found in environment. Using local filesystem uploads.');
   const uploadsDir = path.join(process.cwd(), 'uploads', 'products');
   if (!fs.existsSync(uploadsDir)) {
     try {
@@ -77,18 +74,14 @@ export async function uploadProductImage(
     } catch (e) {}
   }
 
-  const ext = normalizedMime.includes('jpeg') || normalizedMime.includes('jpg') ? 'jpg' : normalizedMime.includes('webp') ? 'webp' : 'png';
-  const cleanBase = (filename || 'product').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const safeName = `prod_${Date.now()}_${cleanBase}.${ext}`;
-  const filePath = path.join(uploadsDir, safeName);
+  const filePath = path.join(uploadsDir, `${Date.now()}-${cleanBase}.${ext}`);
   try {
     fs.writeFileSync(filePath, buffer);
   } catch (e) {
-    // If filesystem is read-only (serverless) and no token, convert to data URI or throw
     console.warn('[Storage] Could not write to local disk (read-only filesystem)');
   }
 
-  return `/uploads/products/${safeName}`;
+  return `/uploads/products/${Date.now()}-${cleanBase}.${ext}`;
 }
 
 export async function deleteProductImage(imageUrl: string): Promise<void> {
@@ -114,10 +107,11 @@ export async function deleteProductImage(imageUrl: string): Promise<void> {
   }
 }
 
-export async function getBlobStream(imageUrl: string): Promise<{ buffer?: Buffer; stream?: any; contentType: string; contentLength?: number } | null> {
+export async function getBlobStream(
+  imageUrl: string
+): Promise<{ buffer?: Buffer; stream?: any; contentType: string; contentLength?: number } | null> {
   if (!imageUrl) return null;
 
-  // 1. Local file
   if (imageUrl.startsWith('/uploads/')) {
     const localPath = path.join(process.cwd(), imageUrl);
     if (fs.existsSync(localPath)) {
@@ -129,7 +123,6 @@ export async function getBlobStream(imageUrl: string): Promise<{ buffer?: Buffer
     return null;
   }
 
-  // 2. Vercel Blob URL (supports both public and private stores)
   if (imageUrl.startsWith('https://') && imageUrl.includes('blob.vercel-storage.com')) {
     const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
     const headers: Record<string, string> = {};
@@ -155,3 +148,4 @@ export async function getBlobStream(imageUrl: string): Promise<{ buffer?: Buffer
 
   return null;
 }
+
